@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <title>크로노 테이프 (Chrono Tape)</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+</head>
+<body>
+
+    <div id="game-container"></div>
+
+    <div id="log-container">
+        <div id="log-header">
+            <span>📜 Battle Log</span>
+            <button id="btn-toggle-log" style="padding:2px 8px; font-size:10px;">-</button>
+        </div>
+        <div id="log-content">
+            <div class="log-entry">게임 시작!</div>
+        </div>
+    </div>
+
+    <div id="ui-panel">
+        
+        <div class="timeline-container">
+            <span>Time:</span>
+            <input type="range" id="timeline-slider" min="0" max="1000" value="0">
+            <span id="time-display">0.0s</span>
+        </div>
+
+        <div class="info-bar">
+            <div id="cost-display">⚡ Cost: 10 / 50</div>
+
+            <div class="control-group">
+                <select id="resolution-select" style="padding:5px; border-radius:5px; background:#444; color:#fff; border:1px solid #666;">
+                    <option value="800x450">기본 (800x450)</option>
+                    <option value="1280x720" selected>HD (1280x720)</option>
+                    <option value="1600x900">HD+ (1600x900)</option>
+                    <option value="1920x1080">FHD (1920x1080)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <button id="btn-reset" class="btn-warning">↺ 계획 초기화</button>
+            </div>
+
+            <div class="control-group">
+                <div class="speed-controls" style="display:none;" id="speed-panel">
+                    <button id="btn-pause" class="speed-btn">❚❚</button>
+                    <button id="btn-1x" class="speed-btn active">▶</button>
+                    <button id="btn-2x" class="speed-btn">⏩</button>
+                </div>
+                <button id="btn-turn-end" class="btn-primary">전투 시작 (GO)</button>
+            </div>
+        </div>
+
+        <div id="hand-area">
+            </div>
+    </div>
+
+    <script src="js/data.js"></script>
+    <script src="js/scenes/TitleScene.js"></script>
+    <script src="js/scenes/MapScene.js"></script>
+    <script src="js/scenes/BattleScene.js"></script>
+    <script src="js/game.js"></script>
+
+    <script>
+        window.addEventListener('load', () => {
+            const resSelect = document.getElementById('resolution-select');
+            const gameContainer = document.getElementById('game-container');
+            const uiPanel = document.getElementById('ui-panel');
+
+            function setResolution(val) {
+                if (!gameContainer || !uiPanel) return;
+                const [w, h] = val.split('x').map(Number);
+                gameContainer.style.width = w + 'px';
+                gameContainer.style.height = h + 'px';
+                uiPanel.style.width = w + 'px';
+            }
+
+            if (resSelect) {
+                setResolution(resSelect.value);
+                resSelect.addEventListener('change', (e) => setResolution(e.target.value));
+            }
+        });
+    </script>
+
+</body>
+</html>
