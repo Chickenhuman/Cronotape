@@ -2,90 +2,138 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com;">
     
-    <title>크로노 테이프 (Chrono Tape)</title>
+    <title>CHRONO TAPE</title>
     <link rel="stylesheet" href="style.css">
+    
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <script src="js/easystar.min.js"></script>
 </head>
 <body>
 
     <div id="game-container"></div>
 
-    <div id="log-container">
-        <div id="log-header">
-            <span>📜 Battle Log</span>
-            <button id="btn-toggle-log" style="padding:2px 8px; font-size:10px;">-</button>
+    <div id="artifact-container" class="artifact-container">
         </div>
-        <div id="log-content">
-            <div class="log-entry">게임 시작!</div>
-        </div>
-    </div>
 
-    <div id="ui-panel">
+    <div id="ui-top-bar" class="ui-overlay">
         
-        <div class="timeline-container">
+        <div class="info-group">
+            <div id="cost-display">⚡ 10 / 50</div>
+        </div>
+
+        <div class="timeline-wrapper">
             <span>Time:</span>
             <input type="range" id="timeline-slider" min="0" max="1000" value="0">
             <span id="time-display">0.0s</span>
         </div>
 
-        <div class="info-bar">
-            <div id="cost-display">⚡ Cost: 10 / 50</div>
-
-            <div class="control-group">
-                <select id="resolution-select" style="padding:5px; border-radius:5px; background:#444; color:#fff; border:1px solid #666;">
-                    <option value="800x450">기본 (800x450)</option>
-                    <option value="1280x720" selected>HD (1280x720)</option>
-                    <option value="1600x900">HD+ (1600x900)</option>
-                    <option value="1920x1080">FHD (1920x1080)</option>
-                </select>
+        <div class="control-group">
+            <button id="btn-reset" class="btn-warning">↺ Reset</button>
+            
+            <div class="speed-controls" style="display:none;" id="speed-panel">
+                <button id="btn-pause" class="speed-btn">❚❚</button>
+                <button id="btn-1x" class="speed-btn active">▶</button>
+                <button id="btn-2x" class="speed-btn">⏩</button>
             </div>
-
-            <div class="control-group">
-                <button id="btn-reset" class="btn-warning">↺ 계획 초기화</button>
-            </div>
-
-            <div class="control-group">
-                <div class="speed-controls" style="display:none;" id="speed-panel">
-                    <button id="btn-pause" class="speed-btn">❚❚</button>
-                    <button id="btn-1x" class="speed-btn active">▶</button>
-                    <button id="btn-2x" class="speed-btn">⏩</button>
-                </div>
-                <button id="btn-turn-end" class="btn-primary">전투 시작 (GO)</button>
-            </div>
+            
+            <button id="btn-turn-end" class="btn-primary">GO!</button>
         </div>
-
-        <div id="hand-area">
-            </div>
     </div>
 
-    <script src="js/data.js"></script>
-    <script src="js/scenes/TitleScene.js"></script>
-    <script src="js/scenes/MapScene.js"></script>
-    <script src="js/scenes/BattleScene.js"></script>
-    <script src="js/game.js"></script>
+    <div id="ui-bottom-bar" class="ui-overlay">
+        
+        <div id="deck-pile" class="pile-container pile-left">
+            <div class="card-back-visual"></div>
+            <div class="pile-label">DECK</div>
+            <div class="pile-number" id="deck-count">0</div>
+        </div>
+
+        <div id="hand-area"></div>
+
+<div id="discard-pile" class="pile-container pile-right">
+            <div class="pile-icon-large">♺</div>
+            <div class="pile-label">DISCARD</div>
+            <div class="pile-number" id="discard-count">0</div>
+            </div>
+
+        <div id="seal-pile" class="pile-badge-small" title="봉인된 카드 목록">
+            <span class="pile-icon-small">🔒</span>
+            <span id="seal-count">0</span>
+        </div>
+
+    </div>
+    </div>
+    <div id="log-container">
+        <div id="log-header">
+            <span>📜 Log</span>
+            <button id="btn-toggle-log" style="font-size:10px;">-</button>
+        </div>
+        <div id="log-content"></div>
+    </div>
+
+    <div id="card-viewer-modal" class="ui-overlay" style="display: none;">
+        <div class="viewer-box">
+            <div class="viewer-header">
+                <h2 id="viewer-title">봉인된 카드</h2>
+                <button id="btn-viewer-close">✖</button>
+            </div>
+            <div id="viewer-content" class="viewer-grid">
+                </div>
+        </div>
+    </div>
+
+    <div id="game-popup" class="ui-overlay" style="display: none;">
+        <div class="popup-box">
+            <h2 id="popup-title">알림</h2>
+            <div id="popup-message">메시지 내용</div>
+            <div class="popup-buttons">
+                <button id="btn-popup-cancel" class="btn-warning">취소</button>
+                <button id="btn-popup-confirm" class="btn-primary">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="artifact-editor" class="editor-panel" style="display: none;">
+        </div>
+    
+    <button id="btn-toggle-editor" style="position:fixed; top:10px; right:10px; z-index:3000;">🛠️ Editor</button>
 
     <script>
-        window.addEventListener('load', () => {
-            const resSelect = document.getElementById('resolution-select');
-            const gameContainer = document.getElementById('game-container');
-            const uiPanel = document.getElementById('ui-panel');
-
-            function setResolution(val) {
-                if (!gameContainer || !uiPanel) return;
-                const [w, h] = val.split('x').map(Number);
-                gameContainer.style.width = w + 'px';
-                gameContainer.style.height = h + 'px';
-                uiPanel.style.width = w + 'px';
-            }
-
-            if (resSelect) {
-                setResolution(resSelect.value);
-                resSelect.addEventListener('change', (e) => setResolution(e.target.value));
-            }
-        });
+        document.getElementById('btn-toggle-editor').onclick = () => {
+            const panel = document.getElementById('artifact-editor');
+            panel.style.display = (panel.style.display === 'none') ? 'block' : 'none';
+        };
     </script>
+<script src="js/data.js"></script>
+    
+<script src="js/objects/Unit.js"></script>
+<script src="js/objects/Projectile.js"></script>
+<script src="js/managers/DataManager.js"></script> 
+
+<script src="js/managers/GameLogic.js"></script>
+<script src="js/managers/EnemyAI.js"></script>
+<script src="js/managers/CardDeckManager.js"></script>
+<script src="js/managers/InteractionManager.js"></script>
+
+<script src="js/managers/CombatManager.js"></script>
+
+<script src="js/managers/UIManager.js"></script> 
+<script src="js/managers/SVGManager.js"></script>
+<script src="js/managers/GhostSimulator.js"></script>
+<script src="js/managers/ArtifactManager.js"></script>
+<div id="unit-tooltip"></div>
+<script src="js/maps/MapData.js"></script> 
+<script src="js/scenes/TitleScene.js"></script>
+<script src="js/scenes/CommanderSelectScene.js"></script>
+ <script src="js/scenes/MapScene.js"></script>
+ <script src="js/scenes/BattleScene.js"></script>
+    
+ <script src="js/scenes/ShopScene.js"></script> 
+
+ <script src="js/game.js"></script>
 
 </body>
 </html>
