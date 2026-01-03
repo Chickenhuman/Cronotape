@@ -1,14 +1,12 @@
 // js/managers/GameLogic.js
 
 class GameLogic {
-    // 거리 계산
     static getDistance(a, b) {
         const dx = a.x - b.x;
         const dy = a.y - b.y;
         return Math.sqrt(dx * dx + dy * dy);
     }
 
-    // 타겟 찾기
     static findTarget(me, allUnits) {
         let nearest = null;
         let minDist = 9999;
@@ -17,7 +15,7 @@ class GameLogic {
             if (!u.active || !u.isSpawned) continue;
             if (u.currentHp <= 0) continue;
             if (u.team === me.team) continue;
-            if (u.isStealthed) continue; // 은신 체크
+            if (u.isStealthed) continue; 
 
             const dist = this.getDistance(me, u);
             if (dist < minDist) {
@@ -28,7 +26,6 @@ class GameLogic {
         return nearest;
     }
 
-    // ★ [수정됨] 이동 및 공격 로직
     static runUnitLogic(me, allUnits, dt, grid, tileSize, easystar) {
         if (!me.active || me.currentHp <= 0) return;
         
@@ -40,15 +37,15 @@ class GameLogic {
 
         const dist = this.getDistance(me, target);
         
-        // 1. 공격 사거리 안이면 -> 공격 시도
+        // 1. 사거리 안 -> 캐스팅 시도
         if (dist <= me.stats.range) {
             me.path = []; 
             
-            // ★ [핵심 변경] 바로 공격(onAttack)하지 않고 캐스팅 시도(tryAttack)를 요청
+            // ★ tryAttack 호출 (선딜레이 시작)
             if (me.tryAttack) {
                 me.tryAttack(target); 
             } else {
-                // (안전장치) Unit.js가 아직 업데이트 안 됐을 경우를 대비
+                // 안전장치
                 if (me.attackCooldown <= 0) {
                     me.attackCooldown = me.stats.attackSpeed;
                     if (me.onAttack) me.onAttack(target);
@@ -70,7 +67,6 @@ class GameLogic {
             const moveTargetX = nextNode.x * tileSize + tileSize / 2;
             const moveTargetY = nextNode.y * tileSize + tileSize / 2;
 
-            // 노드 스키핑 (20px 근처면 도착 인정)
             const distToNode = Math.sqrt((me.x - moveTargetX)**2 + (me.y - moveTargetY)**2);
             if (distToNode < 20) {
                 me.path.shift(); 
@@ -80,18 +76,16 @@ class GameLogic {
             const angle = Math.atan2(moveTargetY - me.y, moveTargetX - me.x);
             const speed = me.stats.speed;
             
-            // 이동 실행
             me.x += Math.cos(angle) * speed * dt;
             me.y += Math.sin(angle) * speed * dt;
 
             if (me.setLookingAt) me.setLookingAt(moveTargetX, moveTargetY);
         }
 
-        // 3. 밀어내기 (겹침 방지)
+        // 3. 밀어내기
         this.applySeparation(me, allUnits, dt, 0.8, grid, tileSize);
     }
 
-    // 경로 계산 함수
     static calculatePath(me, target, grid, tileSize, easystar) {
         if (!easystar || !grid) return;
 
@@ -102,7 +96,7 @@ class GameLogic {
 
         if (!this.isValidCoord(startX, startY, grid) || !this.isValidCoord(endX, endY, grid)) return;
 
-        // 구조 요청 로직 (벽에 끼었을 때 탈출)
+        // 벽 탈출
         if (grid[startY][startX] === 1) {
             const neighbors = [
                 {x: startX+1, y: startY}, {x: startX-1, y: startY},
@@ -119,9 +113,7 @@ class GameLogic {
 
         easystar.findPath(startX, startY, endX, endY, (path) => {
             if (path && path.length > 0) {
-                if (path[0].x === startX && path[0].y === startY) {
-                    path.shift();
-                }
+                if (path[0].x === startX && path[0].y === startY) path.shift();
                 me.path = path;
             } else {
                 me.path = []; 
@@ -130,7 +122,6 @@ class GameLogic {
         easystar.calculate();
     }
 
-    // 밀어내기 (Separation)
     static applySeparation(me, allUnits, dt, forceScale, grid, tileSize) {
         if (forceScale <= 0) return;
 

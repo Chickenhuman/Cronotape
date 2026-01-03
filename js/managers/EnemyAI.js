@@ -221,10 +221,20 @@ class EnemyAI {
                 break;
             }
         }
-
         if (spawnY !== -1) {
-            return { time, type: 'Unit', name: unitName, x: spawnX, y: spawnY, spawned: false };
+            // ★ [수정] 적군도 오프셋을 미리 계산해서 저장합니다.
+            const offsets = [];
+            const count = stats.count || 1;
+            for(let i=0; i<count; i++) {
+                if (i === 0) offsets.push({x: 0, y: 0});
+                else offsets.push({ x: Math.random() * 40 - 20, y: Math.random() * 40 - 20 });
+            }
+
+            return { 
+                time, type: 'Unit', name: unitName, x: spawnX, y: spawnY, spawned: false,
+                offsets: offsets // ★ 오프셋 포함
+            };
         }
-        return null; 
+        return null;
     }
 }

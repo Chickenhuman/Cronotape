@@ -418,7 +418,7 @@ if (this.grid[y] && this.grid[y][x] === 1) {
     }
 
 // [3] 업데이트 루프 (10라운드 체크)
-    update(time, delta) {
+ update(time, delta) {
         if (!this.isPlaying) return;
         
         const dt = (delta / 1000) * this.timeSpeed;
@@ -428,32 +428,48 @@ if (this.grid[y] && this.grid[y][x] === 1) {
         this.easystar.calculate();
         
         this.checkSpawns();
-        // ★ [추가] 실시간 예측 UI 갱신
         this.updatePredictionUI();
 
-        // ★ 10라운드 제한
-        const MAX_ROUNDS = 10; 
+        // 1. 유닛 업데이트 (이동, 공격, 데미지 처리)
+        // 이 과정에서 유닛(기지 포함)의 체력이 0이 되어 active = false가 될 수 있습니다.
+        this.activeUnits.forEach(unit => {
+            if (unit.active) {
+                if (unit.update) unit.update(dt); 
+                if (unit.isBase) this.updateHpBar(unit);
+            }
+        });
+
+        // ★ [핵심 수정] 유닛 목록에서 삭제하기 "전"에 게임 종료 조건을 체크해야 합니다!
         
-        // 1. 적 기지 파괴 (즉시 10km 전진)
+        // 2-1. 적 기지 파괴 체크
         const enemyBase = this.activeUnits.find(u => u.isBase && u.team === 'ENEMY');
-        if (enemyBase && enemyBase.currentHp <= 0) {
+        if (enemyBase && (enemyBase.currentHp <= 0 || !enemyBase.active)) {
             this.checkGameEnd('ENEMY_DESTROYED');
             return;
         }
 
-        // 2. 아군 기지 파괴 (즉시 패배)
+        // 2-2. 아군 기지 파괴 체크
         const myBase = this.activeUnits.find(u => u.isBase && u.team === 'ALLY');
-        if (myBase && myBase.currentHp <= 0) {
+        if (myBase && (myBase.currentHp <= 0 || !myBase.active)) {
             this.checkGameEnd('ALLY_DESTROYED');
             return;
         }
 
+        // ★ 이제 죽은 유닛을 리스트에서 제거합니다.
+        this.activeUnits = this.activeUnits.filter(u => u.active);
+
+        // 투사체 업데이트
+        this.activeProjectiles.forEach(proj => {
+            if (proj.active && proj.update) proj.update(dt);
+        });
+        this.activeProjectiles = this.activeProjectiles.filter(p => p.active);
+        
         // 3. 시간/라운드 종료
-        const ROUND_TIME_LIMIT = 10.0; // 10
+        const ROUND_TIME_LIMIT = 10.0; 
+        const MAX_ROUNDS = 10; 
 
         if (this.battleTime >= ROUND_TIME_LIMIT) { 
             if (this.currentRound >= MAX_ROUNDS) {
-                // 10라운드 끝 -> 판정승(비율 계산)
                 this.addLog("전투 종료! 전선 이동 거리 산출...", "log-purple");
                 this.checkGameEnd('TIME_OVER');
             } else {
@@ -478,24 +494,10 @@ if (this.grid[y] && this.grid[y][x] === 1) {
                 }
             }
         }
-
-        // 유닛 업데이트
-        this.activeUnits.forEach(unit => {
-            if (unit.active) {
-                if (unit.update) unit.update(dt); 
-                if (unit.isBase) this.updateHpBar(unit);
-            }
-        });
-        this.activeUnits = this.activeUnits.filter(u => u.active);
-
-        // 투사체 업데이트
-        this.activeProjectiles.forEach(proj => {
-            if (proj.active && proj.update) proj.update(dt);
-        });
-        this.activeProjectiles = this.activeProjectiles.filter(p => p.active);
         
         this.drawCommanderHUD();
     }
+
     findNearestToPoint(x, y, targetTeam) {
         let nearest = null, minDist = 9999;
         this.activeUnits.forEach(u => {
@@ -689,12 +691,14 @@ const cardStr = this.cardManager.hand[this.cardManager.selectedCardIdx];
         // 1. 아군(플레이어) 배치 처리
         this.deployedObjects.forEach(plan => {
             if (!plan.spawned && this.battleTime >= plan.time) {
-                if (plan.type === 'Unit') {
+            if (plan.type === 'Unit') {
                     const stats = this.getAdjustedStats('Unit', plan.name); 
                     const spawnCount = stats.count || 1;
                     for (let i = 0; i < spawnCount; i++) {
-                        const offsetX = (i === 0) ? 0 : (Math.random() * 40 - 20);
-                        const offsetY = (i === 0) ? 0 : (Math.random() * 40 - 20);
+                        // ★ [수정] 랜덤 대신 plan에 저장된 offsets 사용
+                        const offsetX = (plan.offsets && plan.offsets[i]) ? plan.offsets[i].x : 0;
+                        const offsetY = (plan.offsets && plan.offsets[i]) ? plan.offsets[i].y : 0;
+                        
                         this.spawnUnit(plan.x + offsetX, plan.y + offsetY, 'ALLY', plan.name);
                     }
                 } else {
@@ -722,10 +726,12 @@ const cardStr = this.cardManager.hand[this.cardManager.selectedCardIdx];
                         return;
                     }
 
-                    const spawnCount = stats.count || 1;
+        const spawnCount = stats.count || 1;
                     for (let i = 0; i < spawnCount; i++) {
-                        const offsetX = (i === 0) ? 0 : (Math.random() * 40 - 20);
-                        const offsetY = (i === 0) ? 0 : (Math.random() * 40 - 20);
+                        // ★ [수정] 적군도 저장된 offsets 사용
+                        const offsetX = (plan.offsets && plan.offsets[i]) ? plan.offsets[i].x : 0;
+                        const offsetY = (plan.offsets && plan.offsets[i]) ? plan.offsets[i].y : 0;
+
                         this.spawnUnit(plan.x + offsetX, plan.y + offsetY, 'ENEMY', plan.name);
                     }
                 } else {
@@ -835,69 +841,53 @@ createBase(team) {
     }
 
     // [2] 게임 종료 및 결과 정산
-    checkGameEnd(triggerType) {
+    // [BattleScene.js] checkGameEnd 함수 수정
+
+    checkGameEnd(reason) {
+        if (!this.isPlaying) return;
+        
         this.isPlaying = false;
-        
-        const myBase = this.activeUnits.find(u => u.isBase && u.team === 'ALLY');
-        const enemyBase = this.activeUnits.find(u => u.isBase && u.team === 'ENEMY');
-        
-        // 내 체력 저장 (다음 판으로)
-        if (myBase) GAME_DATA.currentHp = myBase.currentHp;
-        
-        if (!myBase || myBase.currentHp <= 0) {
-            this.handleGameOver("지휘관이 쓰러졌습니다...");
-            return;
+        this.uiManager.toggleBattleUI(false); // UI 숨김
+
+        let msg = "";
+        let isWin = false;
+
+        if (reason === 'ENEMY_DESTROYED') {
+            msg = "승리! 적 기지를 파괴했습니다.";
+            isWin = true;
+        } else if (reason === 'ALLY_DESTROYED') {
+            msg = "패배... 아군 기지가 파괴되었습니다.";
+            isWin = false;
+        } else if (reason === 'TIME_OVER') {
+            // 시간 초과 시 판정 (체력 비율)
+            const myBase = this.activeUnits.find(u => u.isBase && u.team === 'ALLY');
+            const enemyBase = this.activeUnits.find(u => u.isBase && u.team === 'ENEMY');
+            const myHp = myBase ? myBase.currentHp : 0;
+            const enemyHp = enemyBase ? enemyBase.currentHp : 0;
+            
+            if (myHp >= enemyHp) {
+                msg = "판정승! (남은 체력이 더 많습니다)";
+                isWin = true;
+            } else {
+                msg = "판정패... (적 체력이 더 많습니다)";
+                isWin = false;
+            }
         }
 
-        // 데미지 계산
-        const myMaxHp = GAME_DATA.maxHp || 1000;
-        const enemyMaxHp = enemyBase ? enemyBase.stats.hp : 1000;
-        
-        const myDamageTaken = myMaxHp - (myBase ? myBase.currentHp : 0);
-        const enemyDamageTaken = enemyMaxHp - (enemyBase ? enemyBase.currentHp : 0);
-        const isEnemyDestroyed = (enemyBase && enemyBase.currentHp <= 0);
-
-        // ★ DataManager에게 결과 보고 (거리 계산)
-        const moveDist = GAME_DATA.advanceCampaign(enemyDamageTaken, enemyMaxHp, myDamageTaken, myMaxHp, isEnemyDestroyed);
-
-        if (GAME_DATA.isGameOver()) {
-            // 데드라인에 잡힘
-            this.handleGameOver(`데드라인에 따라잡혔습니다!\n(현재위치: ${GAME_DATA.campaign.currentDistance}km / 데드라인: ${GAME_DATA.campaign.deadline}km)`);
+        // 결과 처리
+        if (isWin) {
+            // 승리 시 보상 지급 (예: 골드 50)
+            GAME_DATA.addGold(50);
+            GAME_DATA.completeCurrentNode();
+            // 팝업 후 맵으로 복귀
+            this.uiManager.showPopup("전투 승리!", `${msg}\n(골드 +50)`, () => {
+                this.scene.start('MapScene');
+            });
         } else {
-            // 생존 (전진 or 후퇴)
-            const isAdvance = (moveDist >= 0);
-            const msgTitle = isAdvance ? "전진 성공!" : "전선 후퇴...";
-            const msgColor = isAdvance ? "log-green" : "log-red";
-            
-            // 골드 보상: 전진 시 1km당 10G
-            let rewardGold = isAdvance ? (moveDist * 10 + 20) : 10; 
-            
-            // [수리] 승리(전진) 시 잃은 체력의 20% 복구
-            let repairMsg = "";
-            if (isAdvance) {
-                const lostHp = myMaxHp - GAME_DATA.currentHp;
-                if (lostHp > 0) {
-                    const repairAmount = Math.floor(lostHp * 0.2); 
-                    GAME_DATA.currentHp = Math.min(GAME_DATA.currentHp + repairAmount, myMaxHp);
-                    repairMsg = `\n🔧 수리: +${repairAmount} HP`;
-                }
-            }
-
-            GAME_DATA.addGold(rewardGold);
-            this.addLog(`${msgTitle} (${moveDist}km)${repairMsg.replace('\n', ', ')}`, msgColor);
-            
-            this.showPopup(
-                msgTitle, 
-                `이동 거리: ${moveDist > 0 ? '+' : ''}${moveDist}km\n` +
-                `현재 위치: ${GAME_DATA.campaign.currentDistance}km\n` +
-                `(데드라인: ${GAME_DATA.campaign.deadline}km)\n\n` +
-                `💰 골드: +${rewardGold}G` + 
-                `${repairMsg}`, 
-                () => {
-                    GAME_DATA.stage++; 
-                    this.scene.start('MapScene'); 
-                }
-            );
+            // 패배 시 게임 오버 처리
+            this.uiManager.showPopup("전투 패배", msg, () => {
+                this.scene.start('TitleScene'); // 혹은 MapScene으로 돌아가되 페널티 적용
+            });
         }
     }
 
@@ -934,7 +924,20 @@ createBase(team) {
     // ★ [Strategy] 유닛 배치 위치 결정
 // BattleScene.js 내부 함수 교체
 
-    updateGhostSimulation() {
+    // [BattleScene.js] updateGhostSimulation 함수 교체
+
+updateGhostSimulation() {
+        // ★ [5단계 성능 최적화] 스로틀링 (Throttling) 적용
+        // 마지막 계산 후 50ms(0.05초)가 지나지 않았다면 계산을 건너뜁니다.
+        const now = Date.now();
+        if (this.lastSimTime && (now - this.lastSimTime < 50)) {
+            return; 
+        }
+        this.lastSimTime = now;
+
+        // ----------------------------------------------------
+        // 이하 로직은 이전과 동일합니다.
+        // ----------------------------------------------------
         this.ghostGroup.clear(true, true);
         this.predictionGraphics.clear(); 
         
@@ -944,6 +947,7 @@ createBase(team) {
         if (!slider) return;
         const currentTime = parseFloat(slider.value) / 100;
 
+        // 1. 시뮬레이터 실행
         const allyPlansWithTeam = this.deployedObjects.map(p => ({ ...p, team: 'ALLY' }));
         const enemyPlansWithTeam = this.enemyWave.map(p => ({ ...p, team: 'ENEMY' }));
 
@@ -961,39 +965,44 @@ createBase(team) {
             }
         );
 
+        // 2. 유령 표시
         results.forEach(vUnit => {
-            // ★ [수정] 기지('기지')도 이제 시각화 대상에 포함시킵니다!
-            // (vUnit.name === '기지' 제외 조건을 삭제함)
             if (!vUnit.isSpawned) return; 
             
             if (vUnit.active) {
                 const color = (vUnit.team === 'ALLY') ? 0x00ff00 : 0xff0000;
                 this.createGhost(vUnit.x, vUnit.y, vUnit.name, color, 0.6, vUnit.currentHp, vUnit.stats.hp);
             } else {
-                // 사망 시 (기지 파괴 포함)
                 const skull = this.add.text(vUnit.x, vUnit.y, '💀', { 
-                    fontSize: '24px',
-                    stroke: '#000',
-                    strokeThickness: 3
+                    fontSize: '24px', stroke: '#000', strokeThickness: 3
                 }).setOrigin(0.5);
                 this.ghostGroup.add(skull);
             }
         });
 
-        // 적 스킬 예고
+        // 3. 적군 소환 예고 (Future Sight)
         this.enemyWave.forEach(plan => {
-            if (plan.type === 'Skill' && Math.abs(plan.time - currentTime) < 0.5) {
-                const stats = SKILL_STATS[plan.name];
-                if (stats) {
-                    this.predictionGraphics.lineStyle(2, 0xff0000, 1.0); 
-                    this.predictionGraphics.fillStyle(0xff0000, 0.2);    
-                    this.predictionGraphics.fillCircle(plan.x, plan.y, stats.radius);
-                    this.predictionGraphics.strokeCircle(plan.x, plan.y, stats.radius);
-                    
-                    const text = this.add.text(plan.x, plan.y - 40, `⚠️${plan.name}`, { 
-                        fontSize:'12px', color:'#ff0000', fontStyle:'bold', stroke: '#fff', strokeThickness: 2
+            if (plan.time > currentTime) {
+                if (plan.type === 'Unit') {
+                    this.createGhost(plan.x, plan.y, plan.name, 0xff0000, 0.4, 100, 100);
+                    const timeText = this.add.text(plan.x, plan.y - 30, `${plan.time}s`, {
+                        fontSize: '12px', color: '#ffaaaa', stroke: '#000', strokeThickness: 2, align: 'center'
                     }).setOrigin(0.5);
-                    this.ghostGroup.add(text); 
+                    this.ghostGroup.add(timeText);
+                }
+                else if (plan.type === 'Skill') {
+                    const stats = SKILL_STATS[plan.name];
+                    if (stats) {
+                        this.predictionGraphics.lineStyle(2, 0xff0000, 0.8); 
+                        this.predictionGraphics.fillStyle(0xff0000, 0.1);    
+                        this.predictionGraphics.fillCircle(plan.x, plan.y, stats.radius);
+                        this.predictionGraphics.strokeCircle(plan.x, plan.y, stats.radius);
+                        
+                        const text = this.add.text(plan.x, plan.y - 40, `⚠️${plan.name}\n(${plan.time}s)`, { 
+                            fontSize:'12px', color:'#ff0000', fontStyle:'bold', stroke: '#fff', strokeThickness: 2, align: 'center'
+                        }).setOrigin(0.5);
+                        this.ghostGroup.add(text); 
+                    }
                 }
             }
         });

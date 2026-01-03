@@ -209,25 +209,25 @@ const ENEMY_COMMANDERS = {
         name: '초보 검투사', 
         deck: ['적군'], 
         aiType: 'BASIC', 
-        baseCost: 15
+        baseCost: 5
     },
     2: { 
         name: '백인대장', 
         deck: ['적군', '궁수', '검사'], 
         aiType: 'BALANCED', 
-        baseCost: 15
+        baseCost: 10
     },
     3: { 
         name: '암살자 길드장', 
         deck: ['적군', '암살자', '방벽'], 
         aiType: 'TRICKY', 
-        baseCost: 15
+        baseCost: 12
     },
     5: { 
         name: '화염의 마법사', 
         deck: ['검사', '방벽', '화염구'], 
         aiType: 'TACTICAL_AOE', 
-        baseCost: 15
+        baseCost: 12
     }
 };
 
