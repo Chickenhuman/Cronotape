@@ -22,53 +22,54 @@ class BattleScene extends Phaser.Scene {
     }
 
 create() {
-        // [1] UI 및 배경 설정
-        if (typeof SVG_MANAGER !== 'undefined') {
-            SVG_MANAGER.initTextures(this);
-        }
+        // ★ [UI 복구] 배틀 씬 진입 시 전투 UI 보이기
+        const slider = document.getElementById('timeline-slider');
+        if (slider) slider.style.display = 'block';
+        
+        const hand = document.getElementById('hand-container');
+        if (hand) hand.style.display = 'flex'; 
+        
         const topBar = document.getElementById('ui-top-bar');
         const bottomBar = document.getElementById('ui-bottom-bar');
         if (topBar) topBar.style.display = 'flex';
         if (bottomBar) bottomBar.style.display = 'flex';
-        const slider = document.getElementById('timeline-slider');
+
+        // ★ [수정] 중복 선언 제거됨 (slider 변수 재사용)
         const timeDisplay = document.getElementById('time-display');
+        
         if (typeof SVG_MANAGER !== 'undefined') {
             SVG_MANAGER.initTextures(this);
         }
         if (slider) {
-            slider.value = 0; // 슬라이더 바를 0 위치로
+            slider.value = 0; 
         }
         if (timeDisplay) {
-            timeDisplay.innerText = "0.0s"; // 텍스트도 0.0s로
+            timeDisplay.innerText = "0.0s"; 
         }
         
-        // ★★★ 맵 배경 이미지 로드를 맵 데이터 로드 섹션 [4]로 이동합니다. ★★★
-
-        // [2] 시뮬레이터 및 그래픽 초기화
+        // [2] 매니저 초기화
         this.simulator = new GhostSimulator();
         this.enemyAI = new EnemyAI(this);
         this.cardManager = new CardDeckManager(this);
-        // ★ [신규] 인터랙션 매니저 생성
         this.interactionManager = new InteractionManager(this);
-        // ★ [신규] 전투 매니저 생성
         this.combatManager = new CombatManager(this);
-        // ★ [신규] UI 매니저 생성
         this.uiManager = new UIManager(this);
         this.ghostGroup = this.add.group();
         
         this.fieldGraphics = this.add.graphics();
-        this.fieldGraphics.setDepth(10); // 카드보다 위에 표시
-        this.fieldGraphics.setVisible(false); // 평소에는 숨김
-        // ★ 상단 정보 UI 생성 (실시간 예측용)
+        this.fieldGraphics.setDepth(10); 
+        this.fieldGraphics.setVisible(false); 
+        
         this.createTopInfoUI();
-        // ★★★ [에디터 초기화] ★★★
+        
+        // [에디터 초기화]
         this.isEditorMode = false;
         this.coordTextGroup = this.add.group();
         this.gridGraphics = this.add.graphics();
-        this.gridGraphics.setDepth(5); // 필드 그래픽보다 낮게 설정
+        this.gridGraphics.setDepth(5); 
         this.gridGraphics.setVisible(false);
         this.uiManager.setupSpeedControls();
-        this.uiManager.setupTimelineEvents(); // 슬라이더 이벤트 연결
+        this.uiManager.setupTimelineEvents(); 
         this.uiManager.updateCostUI();
 
         if (GAME_DATA.deck.length === 0) {
@@ -88,45 +89,40 @@ create() {
         this.activeUnits = [];
         this.activeProjectiles = [];
 
-        // [4] 맵 데이터 로드 및 적용
-        // ★★★ [맵 로드 로직] ★★★
-    const stageNum = GAME_DATA.stage || 1; 
+        // [4] 맵 데이터 로드
+        const stageNum = GAME_DATA.stage || 1; 
         const currentMapId = `Map${stageNum}`;
         if (typeof getMapData === 'function') {
             this.mapData = getMapData(currentMapId); 
-        } else {
-            console.warn("getMapData 함수가 없습니다. 기본 맵 데이터를 사용합니다.");
-            this.mapData = { 
-                tileSize: 40, 
-                mapWidth: 25, 
-                mapHeight: 15, 
-                image: 'bg_battle' 
-            };
+} else {
+            // ★ [수정] 기본값도 1280x720 화면에 맞게 확장 (32칸 x 18칸)
+            this.mapData = { tileSize: 40, mapWidth: 32, mapHeight: 18, image: 'bg_battle' };
         }
-        // 맵 속성 적용
+        
         this.tileSize = this.mapData.tileSize;
         this.mapWidth = this.mapData.mapWidth;
         this.mapHeight = this.mapData.mapHeight;
-        // const DEPLOY_LIMIT = this.mapData.deployLimit; // 전역 변수 DEPLOY_LIMIT가 여기서 정의되거나 this에 할당되어야 합니다.
 
-        // 맵 배경 이미지 설정 (배경 이미지 키도 맵 데이터에서 가져옴)
         const bg = this.add.image(this.scale.width / 2, this.scale.height / 2, this.mapData.image);
         bg.setDisplaySize(this.scale.width, this.scale.height);
         bg.setTint(0xaaaaaa);
         
-        // 맵 그리드 적용
         this.grid = this.mapData.getGrid(this.mapWidth, this.mapHeight); 
-        // ★★★ (맵 로드 로직 끝) ★★★
         
-        // ★★★ [기존 하드코딩된 그리드 설정 제거됨] ★★★
-        
-        // EasyStar 설정 (기존과 동일)
         this.easystar = new EasyStar.js();
         this.easystar.setGrid(this.grid); 
         this.easystar.setAcceptableTiles([0, 2, 3]);
         this.easystar.enableDiagonals(); 
         this.easystar.disableCornerCutting();
         this.easystar.enableSync();
+        // ★ [추가할 코드] 시뮬레이션 전용 '터보' EasyStar
+this.simEasystar = new EasyStar.js();
+this.simEasystar.setGrid(this.grid);
+this.simEasystar.setAcceptableTiles([0, 2, 3]);
+this.simEasystar.enableDiagonals();
+this.simEasystar.disableCornerCutting();
+this.simEasystar.enableSync(); // 동기 모드 필수
+this.simEasystar.setIterationsPerCalculation(1000000000);
 
         this.graphics = this.add.graphics();
         this.predictionGraphics = this.add.graphics(); 
@@ -136,20 +132,18 @@ create() {
         this.createBase('ALLY');
         this.createBase('ENEMY');
 
-        this.statusText = this.add.text(10, 10, `Stage ${currentStage} / Round ${this.currentRound}`, { fontSize: '16px', color: '#fff' });
+        this.statusText = this.add.text(10, 10, `Stage ${stageNum} / Round ${this.currentRound}`, { fontSize: '16px', color: '#fff' });
 
         const logContainer = document.getElementById('log-container');
         if (logContainer) logContainer.style.display = 'none';
 
-        // [5] 이벤트 리스너 등록
+        // [5] 이벤트 리스너
         this.input.on('pointerdown', (pointer) => {
-            // pointer.y > this.scale.height - 230: 핸드 영역 제외
             if (pointer.y > this.scale.height - 230 || this.isPlaying) return; 
-            // ★ [수정] 매니저에게 입력 위임
             this.interactionManager.handleMapClick(pointer);
         });
         
-        // 버튼 이벤트 연결 (기존 코드 유지)
+        // 버튼 이벤트 복구
         const btnGo = document.getElementById('btn-turn-end');
         if (btnGo) {
             const newBtnGo = btnGo.cloneNode(true);
@@ -163,7 +157,6 @@ create() {
             newBtnReset.addEventListener('click', () => this.interactionManager.resetAllPlans());
         }
         
-        // 팝업 취소 버튼 (기존 코드 유지)
         const btnPopupCancel = document.getElementById('btn-popup-cancel');
         if (btnPopupCancel) {
             btnPopupCancel.onclick = () => {
@@ -171,42 +164,18 @@ create() {
             };
         }
 
-        // --- 카드 뷰어 버튼 이벤트 (기존 코드 유지) ---
-    const deckBtn = document.getElementById('deck-pile');
-        if (deckBtn) {
-            deckBtn.onclick = () => {
-                // ★ [수정] this.cardManager 사용
-                const sortedDeck = [...this.cardManager.deck].sort(); 
-                this.cardManager.openCardViewer(`덱 (남은 카드: ${sortedDeck.length})`, sortedDeck);
-            };
-        }
-
+        // 덱/무덤 버튼 이벤트
+        const deckBtn = document.getElementById('deck-pile');
+        if (deckBtn) deckBtn.onclick = () => this.cardManager.openCardViewer(`덱`, [...this.cardManager.deck].sort());
         const discardBtn = document.getElementById('discard-pile');
-        if (discardBtn) {
-            discardBtn.onclick = () => {
-                // ★ [수정] this.cardManager 사용
-                this.cardManager.openCardViewer(`버린 카드 (무덤: ${this.cardManager.discard.length})`, this.cardManager.discard);
-            };
-        }
-        
+        if (discardBtn) discardBtn.onclick = () => this.cardManager.openCardViewer(`무덤`, this.cardManager.discard);
         const sealBtn = document.getElementById('seal-pile');
-        if (sealBtn) {
-            sealBtn.onclick = (e) => {
-                if (e) e.stopPropagation(); 
-                // ★ [수정] this.cardManager 사용
-                this.cardManager.openCardViewer(`봉인된 카드 (${this.cardManager.sealed.length})`, this.cardManager.sealed);
-            };
-        }
-
+        if (sealBtn) sealBtn.onclick = (e) => { e.stopPropagation(); this.cardManager.openCardViewer(`봉인`, this.cardManager.sealed); };
         const closeBtn = document.getElementById('btn-viewer-close');
-        if (closeBtn) {
-            closeBtn.onclick = () => {
-                document.getElementById('card-viewer-modal').style.display = 'none';
-            };
-        }
+        if (closeBtn) closeBtn.onclick = () => document.getElementById('card-viewer-modal').style.display = 'none';
 
-        // [6] 게임 시작 초기화
-        this.cardManager.initDeck(); // ★ 매니저 호출
+        // [6] 시작 초기화
+        this.cardManager.initDeck(); 
         this.cardManager.drawCard(5);
         this.updateCostUI();
         this.enemyAI.generateWave(GAME_DATA.stage);
@@ -215,28 +184,23 @@ create() {
         this.artifactManager.init(); 
         this.toggleBattleUI(false);
         
-        // ★★★ [추가] 에디터 모드 토글 버튼 추가 ★★★
+        // 에디터 모드 버튼
         const toggleButton = document.createElement('button');
         toggleButton.innerText = '에디터 모드 (OFF)';
         toggleButton.style.position = 'absolute';
         toggleButton.style.top = '10px';
         toggleButton.style.right = '10px';
-        toggleButton.style.zIndex = '100'; // 최상단에 표시
+        toggleButton.style.zIndex = '100'; 
         document.body.appendChild(toggleButton);
 
         toggleButton.onclick = () => {
             this.isEditorMode = !this.isEditorMode;
             toggleButton.innerText = `에디터 모드 (${this.isEditorMode ? 'ON' : 'OFF'})`;
-            
-            // 모드 변경 시 그리드 및 좌표 표시 업데이트
             this.drawEditorGrid();
-            
-// ★ [수정] 매니저를 통해 구역 표시 갱신
             if (this.cardManager.selectedCardIdx !== -1) {
                 this.interactionManager.drawDeploymentZones(!this.isEditorMode);
             }
         };
-        // ★★★ (에디터 모드 토글 버튼 추가 끝) ★★★
     }
 
 createTopInfoUI() {
@@ -901,56 +865,52 @@ createBase(team) {
     }
 
     // ★ [The Eye] 미래 예측 시뮬레이션
-    runPreSimulation() {
-        // 현재 살아있는 유닛들만 가지고 10초간 시뮬레이션을 돌림
-        // 적군의 예정된 행동은 아직 없으므로 allyPlans, enemyPlans는 빈 배열
+runPreSimulation() {
         const simulationResults = this.simulator.run(
-            10.0, // 10초 예측
-            [],   // 추가 배치 없음
-            [],   // 적군 추가 없음
-            this.activeUnits, // 현재 필드 유닛만
+            10.0, 
+            [],   
+            [],   
+            this.activeUnits, 
             { 
                 width: this.scale.width, 
                 height: this.scale.height,
                 grid: this.grid,
                 tileSize: this.tileSize,
-                easystar: this.easystar
+                easystar: this.simEasystar // ★ 여기를 simEasystar로 변경
             }
         );
-        
-        return simulationResults; // 시간대별 유닛들의 위치 정보가 담겨 있음
+        return simulationResults; 
     }
-
     // ★ [Strategy] 유닛 배치 위치 결정
 // BattleScene.js 내부 함수 교체
 
     // [BattleScene.js] updateGhostSimulation 함수 교체
-
+// js/scenes/BattleScene.js 내부 updateGhostSimulation 함수 수정
 updateGhostSimulation() {
-        // ★ [5단계 성능 최적화] 스로틀링 (Throttling) 적용
-        // 마지막 계산 후 50ms(0.05초)가 지나지 않았다면 계산을 건너뜁니다.
         const now = Date.now();
+        // 50ms 스로틀링 (너무 자주 실행되는 것 방지)
         if (this.lastSimTime && (now - this.lastSimTime < 50)) {
             return; 
         }
         this.lastSimTime = now;
 
-        // ----------------------------------------------------
-        // 이하 로직은 이전과 동일합니다.
-        // ----------------------------------------------------
+        // 기존 그래픽 초기화
         this.ghostGroup.clear(true, true);
         this.predictionGraphics.clear(); 
         
+        // 전투 중일 때는 시뮬레이션 중단
         if (this.isPlaying) return;
 
+        // 슬라이더 값 가져오기
         const slider = document.getElementById('timeline-slider');
         if (!slider) return;
         const currentTime = parseFloat(slider.value) / 100;
 
-        // 1. 시뮬레이터 실행
+        // 시뮬레이터 실행을 위한 계획 데이터 준비
         const allyPlansWithTeam = this.deployedObjects.map(p => ({ ...p, team: 'ALLY' }));
         const enemyPlansWithTeam = this.enemyWave.map(p => ({ ...p, team: 'ENEMY' }));
 
+        // 시뮬레이터 실행 (현재 필드 유닛 + 미래 계획)
         const results = this.simulator.run(
             currentTime, 
             allyPlansWithTeam, 
@@ -961,16 +921,76 @@ updateGhostSimulation() {
                 height: this.scale.height,
                 grid: this.grid,          
                 tileSize: this.tileSize,  
-                easystar: this.easystar   
+                easystar: this.simEasystar  
             }
         );
 
-        // 2. 유령 표시
+        // 결과 시각화 (유령 및 경로 표시)
         results.forEach(vUnit => {
             if (!vUnit.isSpawned) return; 
             
+            const color = (vUnit.team === 'ALLY') ? 0x00ff00 : 0xff0000;
+
+            // ---------------------------------------------------------------
+            // [수정] 경로 그리기 로직 강화 (과거 + 미래)
+            // ---------------------------------------------------------------
+            this.predictionGraphics.lineStyle(2, color, 0.5); 
+            this.predictionGraphics.beginPath();
+
+            // 1. [과거] 지나온 길 그리기 (pathLogs)
+            let hasHistory = false;
+            if (vUnit.pathLogs && vUnit.pathLogs.length > 0) {
+                this.predictionGraphics.moveTo(vUnit.pathLogs[0].x, vUnit.pathLogs[0].y);
+                for (let i = 1; i < vUnit.pathLogs.length; i++) {
+                    this.predictionGraphics.lineTo(vUnit.pathLogs[i].x, vUnit.pathLogs[i].y);
+                }
+                // 현재 위치까지 연결
+                this.predictionGraphics.lineTo(vUnit.x, vUnit.y);
+                hasHistory = true;
+            }
+
+            // 2. [미래] 앞으로 갈 길 그리기 (vUnit.path)
+            // GameLogic에서 EasyStar로 계산한 path가 있다면 이어서 그립니다.
+            if (vUnit.path && vUnit.path.length > 0) {
+                // 과거 기록이 없으면 현재 위치에서 시작
+                if (!hasHistory) {
+                    this.predictionGraphics.moveTo(vUnit.x, vUnit.y);
+                } else {
+                    // 과거 기록이 있으면 펜이 이미 vUnit.x, vUnit.y에 있으므로 이어서 그림
+                }
+
+                // path 배열은 그리드 좌표(예: 5, 3)이므로 픽셀 좌표로 변환해야 함
+                vUnit.path.forEach(node => {
+                    const pixelX = node.x * this.tileSize + this.tileSize / 2;
+                    const pixelY = node.y * this.tileSize + this.tileSize / 2;
+                    this.predictionGraphics.lineTo(pixelX, pixelY);
+                });
+            }
+
+            this.predictionGraphics.strokePath();
+
+            // 시작점에 작은 원 표시
+            if (vUnit.pathLogs && vUnit.pathLogs.length > 0) {
+                this.predictionGraphics.fillStyle(color, 0.5);
+                this.predictionGraphics.fillCircle(vUnit.pathLogs[0].x, vUnit.pathLogs[0].y, 3);
+            }
+            // ---------------------------------------------------------------
+            // 2. [미래] 앞으로 갈 길 그리기 (vUnit.path) - ★ 추가된 부분
+            if (vUnit.path && vUnit.path.length > 0) {
+                if (!hasHistory) {
+                    this.predictionGraphics.moveTo(vUnit.x, vUnit.y);
+                }
+                
+                vUnit.path.forEach(node => {
+                    const pixelX = node.x * this.tileSize + this.tileSize / 2;
+                    const pixelY = node.y * this.tileSize + this.tileSize / 2;
+                    this.predictionGraphics.lineTo(pixelX, pixelY);
+                });
+            } 
+
+
+            // 그 다음, 살아있으면 유령을, 죽었으면 해골을 표시
             if (vUnit.active) {
-                const color = (vUnit.team === 'ALLY') ? 0x00ff00 : 0xff0000;
                 this.createGhost(vUnit.x, vUnit.y, vUnit.name, color, 0.6, vUnit.currentHp, vUnit.stats.hp);
             } else {
                 const skull = this.add.text(vUnit.x, vUnit.y, '💀', { 
@@ -980,33 +1000,17 @@ updateGhostSimulation() {
             }
         });
 
-        // 3. 적군 소환 예고 (Future Sight)
+        // 적군 소환 예고 (아직 소환되지 않은 미래의 적 표시)
         this.enemyWave.forEach(plan => {
             if (plan.time > currentTime) {
                 if (plan.type === 'Unit') {
+                    // 미래에 나올 적은 반투명한 붉은색 유령으로 표시
                     this.createGhost(plan.x, plan.y, plan.name, 0xff0000, 0.4, 100, 100);
-                    const timeText = this.add.text(plan.x, plan.y - 30, `${plan.time}s`, {
-                        fontSize: '12px', color: '#ffaaaa', stroke: '#000', strokeThickness: 2, align: 'center'
-                    }).setOrigin(0.5);
-                    this.ghostGroup.add(timeText);
-                }
-                else if (plan.type === 'Skill') {
-                    const stats = SKILL_STATS[plan.name];
-                    if (stats) {
-                        this.predictionGraphics.lineStyle(2, 0xff0000, 0.8); 
-                        this.predictionGraphics.fillStyle(0xff0000, 0.1);    
-                        this.predictionGraphics.fillCircle(plan.x, plan.y, stats.radius);
-                        this.predictionGraphics.strokeCircle(plan.x, plan.y, stats.radius);
-                        
-                        const text = this.add.text(plan.x, plan.y - 40, `⚠️${plan.name}\n(${plan.time}s)`, { 
-                            fontSize:'12px', color:'#ff0000', fontStyle:'bold', stroke: '#fff', strokeThickness: 2, align: 'center'
-                        }).setOrigin(0.5);
-                        this.ghostGroup.add(text); 
-                    }
                 }
             }
         });
     }
+    
     
     // [보조 함수] drawPredictions를 위한 빈 함수 (호환성 유지)
     drawPredictions() {

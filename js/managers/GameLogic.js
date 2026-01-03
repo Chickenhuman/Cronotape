@@ -26,37 +26,49 @@ class GameLogic {
         return nearest;
     }
 
-    static runUnitLogic(me, allUnits, dt, grid, tileSize, easystar) {
+ // ★ [핵심] isSimulation 파라미터가 반드시 있어야 합니다!
+    static runUnitLogic(me, allUnits, dt, grid, tileSize, easystar, isSimulation = false) {
         if (!me.active || me.currentHp <= 0) return;
         
         if (me.attackCooldown > 0) me.attackCooldown -= dt;
         if (me.pathTimer > 0) me.pathTimer -= dt;
 
         const target = this.findTarget(me, allUnits);
+        
+        // 타겟이 없으면(적 전멸) 로직 종료
         if (!target) return;
 
         const dist = this.getDistance(me, target);
         
-        // 1. 사거리 안 -> 캐스팅 시도
+        // 1. 사거리 안 -> 공격 시도
         if (dist <= me.stats.range) {
             me.path = []; 
             
-            // ★ tryAttack 호출 (선딜레이 시작)
-            if (me.tryAttack) {
+            // (A) 실제 게임: tryAttack 호출
+            if (!isSimulation && typeof me.tryAttack === 'function') {
                 me.tryAttack(target); 
-            } else {
-                // 안전장치
+            } 
+            // (B) 시뮬레이션: 공격 판정 데이터만 남김
+            else {
                 if (me.attackCooldown <= 0) {
-                    me.attackCooldown = me.stats.attackSpeed;
-                    if (me.onAttack) me.onAttack(target);
+                    const castTime = me.stats.castTime || 0;
+                    if (castTime > 0) {
+                        me.isCasting = true;
+                        me.castTimer = castTime;
+                        me.currentTarget = target; 
+                    } else {
+                        // ★ [중요] 즉시 공격 발생 시, 시뮬레이터에게 "나 얘 때렸어"라고 알림
+                        me.attackCooldown = me.stats.attackSpeed;
+                        if (isSimulation) me._simAttackTarget = target; 
+                    }
                 }
             }
 
-            if (me.setLookingAt) me.setLookingAt(target.x, target.y);
+            if (!isSimulation && me.setLookingAt) me.setLookingAt(target.x, target.y);
             return; 
         }
 
-        // 2. 이동 로직
+        // 2. 이동 로직 (길찾기)
         if (me.pathTimer <= 0) {
             this.calculatePath(me, target, grid, tileSize, easystar);
             me.pathTimer = 0.5; 
@@ -68,7 +80,7 @@ class GameLogic {
             const moveTargetY = nextNode.y * tileSize + tileSize / 2;
 
             const distToNode = Math.sqrt((me.x - moveTargetX)**2 + (me.y - moveTargetY)**2);
-            if (distToNode < 20) {
+            if (distToNode < 10) { 
                 me.path.shift(); 
                 return; 
             }
@@ -79,10 +91,10 @@ class GameLogic {
             me.x += Math.cos(angle) * speed * dt;
             me.y += Math.sin(angle) * speed * dt;
 
-            if (me.setLookingAt) me.setLookingAt(moveTargetX, moveTargetY);
+            if (!isSimulation && me.setLookingAt) me.setLookingAt(moveTargetX, moveTargetY);
         }
 
-        // 3. 밀어내기
+        // 3. 밀어내기 (시뮬레이션에서도 똑같이 적용)
         this.applySeparation(me, allUnits, dt, 0.8, grid, tileSize);
     }
 
@@ -96,7 +108,6 @@ class GameLogic {
 
         if (!this.isValidCoord(startX, startY, grid) || !this.isValidCoord(endX, endY, grid)) return;
 
-        // 벽 탈출
         if (grid[startY][startX] === 1) {
             const neighbors = [
                 {x: startX+1, y: startY}, {x: startX-1, y: startY},

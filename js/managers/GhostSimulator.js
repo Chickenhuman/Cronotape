@@ -5,6 +5,15 @@ class GhostSimulator {
         this.stepTime = 0.1;
         this.mapGrid = null; 
     }
+    
+    // 객체 깊은 복사 (traits 배열 포함)
+    fastCloneStats(stats) {
+        const newStats = Object.assign({}, stats);
+        if (Array.isArray(stats.traits)) {
+            newStats.traits = [...stats.traits];
+        }
+        return newStats;
+    }
 
     run(targetTime, allyPlans, enemyPlans, currentUnits, mapContext) {
         // 1. 맵 데이터 가져오기
@@ -30,13 +39,51 @@ class GhostSimulator {
             .map(p => ({ ...p, executed: false })) 
             .sort((a, b) => a.time - b.time);
 
+        // 지연된 액션(투사체 등) 목록
+        let delayedActions = []; 
+
         let simTime = 0; 
         
+        // 경로 기록 타이머
+        let logTimer = 0;
+        const LOG_INTERVAL = 0.2; 
+
+        // ★ [핵심 수정] while 루프 시작
         while (simTime < targetTime) {
             simTime += this.stepTime;
+            
+            // 1. 계획 실행
             this.processPlans(simTime, allPlans, ghosts, mapContext);
-            this.updateGhosts(ghosts, this.stepTime, mapContext);
-        }
+            
+            // 2. 지연된 액션 처리
+            this.processDelayedActions(simTime, delayedActions, ghosts);
+            
+            // 3. 유닛 업데이트
+            this.updateGhosts(ghosts, this.stepTime, mapContext, simTime, delayedActions);
+
+            if (mapContext.easystar) {
+                mapContext.easystar.calculate();
+            }
+
+            // 4. 경로 기록
+            logTimer += this.stepTime;
+            if (logTimer >= LOG_INTERVAL) {
+                logTimer = 0;
+                ghosts.forEach(g => {
+                    if (g.active && g.isSpawned && !g.isBase) {
+                        g.pathLogs.push({ x: g.x, y: g.y });
+                    }
+                });
+            }
+
+            // 5. 기지 파괴 체크 (★ 반드시 while 루프 안에 있어야 함!)
+            const allyBase = ghosts.find(g => g.isBase && g.team === 'ALLY');
+            const enemyBase = ghosts.find(g => g.isBase && g.team === 'ENEMY');
+
+            if ((allyBase && !allyBase.active) || (enemyBase && !enemyBase.active)) {
+                break; // 기지가 파괴되면 시뮬레이션 종료
+            }
+        } // ★ while 루프 종료
 
         return ghosts;
     }
@@ -47,7 +94,7 @@ class GhostSimulator {
             x: realUnit.x,
             y: realUnit.y,
             team: realUnit.team,
-            stats: JSON.parse(JSON.stringify(realUnit.stats)), 
+            stats: this.fastCloneStats(realUnit.stats),
             currentHp: realUnit.currentHp,
             active: true,
             isSpawned: true, 
@@ -55,20 +102,21 @@ class GhostSimulator {
             isBase: realUnit.isBase || false,
             stunTimer: realUnit.stunTimer || 0,
             attackCooldown: realUnit.attackCooldown || 0,
-            // ★ [4단계 추가] 캐스팅 관련 상태값
             isCasting: false,
-            castTimer: 0
+            castTimer: 0,
+            pathTimer: 0, 
+            pathLogs: [],
+            path: []
         };
     }
 
-processPlans(simTime, plans, ghosts, mapContext) {
+    processPlans(simTime, plans, ghosts, mapContext) {
         plans.forEach(plan => {
             if (!plan.executed && plan.time <= simTime) {
                 plan.executed = true;
 
                 if (plan.type === 'Unit') {
                     let stats = null;
-                    // ★ [수정] UNIT_DATA -> UNIT_STATS 로 변경 (여기가 문제였습니다!)
                     if (typeof UNIT_STATS !== 'undefined') stats = UNIT_STATS[plan.name];
                     if (!stats && plan.stats) stats = plan.stats; 
                     
@@ -83,14 +131,17 @@ processPlans(simTime, plans, ghosts, mapContext) {
                                 x: plan.x + offsetX,
                                 y: plan.y + offsetY,
                                 team: plan.team, 
-                                stats: JSON.parse(JSON.stringify(stats)),
+                                stats: this.fastCloneStats(stats),
                                 currentHp: stats.hp,
                                 active: true,
                                 isSpawned: true,
                                 attackCooldown: 0,
                                 stunTimer: 0,
                                 isCasting: false,
-                                castTimer: 0
+                                castTimer: 0,
+                                pathTimer: 0,
+                                pathLogs: [],
+                                path: [] 
                             });
                         }
                     }
@@ -101,7 +152,7 @@ processPlans(simTime, plans, ghosts, mapContext) {
             }
         });
     }
-
+    
     applySkillSimulation(plan, ghosts) {
         const stats = (typeof SKILL_STATS !== 'undefined') ? SKILL_STATS[plan.name] : null;
         if (!stats) return;
@@ -123,8 +174,6 @@ processPlans(simTime, plans, ghosts, mapContext) {
                 }
                 if (stats.stun > 0 && ghost.active) {
                     ghost.stunTimer += stats.stun;
-                    
-                    // ★ [4단계 추가] 스킬에 맞아서 스턴 걸리면 캐스팅 취소!
                     if (ghost.isCasting) {
                         ghost.isCasting = false;
                         ghost.castTimer = 0;
@@ -138,115 +187,153 @@ processPlans(simTime, plans, ghosts, mapContext) {
         });
     }
 
-    updateGhosts(ghosts, dt, mapContext) {
+    updateGhosts(ghosts, dt, mapContext, simTime, delayedActions) {
         ghosts.forEach(ghost => {
             if (!ghost.active) return;
             
             // 1. 상태이상(CC) 체크
             if (ghost.stunTimer > 0) {
                 ghost.stunTimer -= dt;
-                
-                // ★ [4단계 핵심] 스턴 상태에서는 캐스팅 불가 (취소됨)
-                if (ghost.isCasting) {
-                    ghost.isCasting = false;
-                    ghost.castTimer = 0;
-                }
-                return; // 행동 불가
+                if (ghost.isCasting) { ghost.isCasting = false; ghost.castTimer = 0; }
+                return; 
             }
             
-            // 쿨타임 감소
             if (ghost.attackCooldown > 0) ghost.attackCooldown -= dt;
+            if (ghost.pathTimer > 0) ghost.pathTimer -= dt; 
 
-            // 2. 캐스팅(공격 선딜레이) 처리
+            // 2. 캐스팅 처리
             if (ghost.isCasting) {
                 ghost.castTimer -= dt;
-                
-                // 캐스팅 완료 시 공격 실행
                 if (ghost.castTimer <= 0) {
-                    this.executeAttack(ghost, ghosts);
+                    this.executeAttack(ghost, ghosts, ghost.currentTarget, simTime, delayedActions); 
                     ghost.isCasting = false;
-                    // 공격 후 쿨타임 적용
                     ghost.attackCooldown = ghost.stats.attackSpeed || 1.0;
                 }
-                return; // 캐스팅 중에는 이동 불가
+                return; 
             }
 
-            // 3. 적 탐색 및 이동/공격 시작
-            let nearestEnemy = null;
-            let minDst = Infinity;
-
+            // 3. 타겟 탐색
+            let target = null;
+            let minDist = Infinity;
+            
             ghosts.forEach(other => {
                 if (other.active && other.team !== ghost.team && !other.isStealthed) {
                     const d = Phaser.Math.Distance.Between(ghost.x, ghost.y, other.x, other.y);
-                    if (d < minDst) {
-                        minDst = d;
-                        nearestEnemy = other;
-                    }
+                    if (d < minDist) { minDist = d; target = other; }
                 }
             });
 
-            if (nearestEnemy) {
-                if (minDst <= ghost.stats.range) {
-                    // 사거리 내에 적이 있고, 쿨타임이 찼다면
-                    if (ghost.attackCooldown <= 0) {
-                        // ★ [4단계 핵심] 즉시 공격이 아니라 캐스팅 시작
-                        const castTime = ghost.stats.castTime || 0;
-                        
-                        if (castTime > 0) {
-                            ghost.isCasting = true;
-                            ghost.castTimer = castTime;
-                        } else {
-                            // 선딜레이가 0인 유닛(전사 등)은 즉시 공격
-                            this.executeAttack(ghost, ghosts, nearestEnemy);
-                            ghost.attackCooldown = ghost.stats.attackSpeed || 1.0;
-                        }
+            // 4. 행동 결정 (공격 vs 이동)
+            let moveTarget = null; 
+
+            if (target && minDist <= (ghost.stats.range || 50)) {
+                // [상황 A] 적이 사거리 안에 있음 -> 공격
+                if (ghost.attackCooldown <= 0) {
+                    const castTime = ghost.stats.castTime || 0;
+                    if (castTime > 0) {
+                        ghost.isCasting = true;
+                        ghost.castTimer = castTime;
+                        ghost.currentTarget = target;
+                    } else {
+                        this.executeAttack(ghost, ghosts, target, simTime, delayedActions);
+                        ghost.attackCooldown = ghost.stats.attackSpeed || 1.0;
+                    }
+                }
+                return; 
+
+            } else if (target) {
+                // [상황 B] 적이 있지만 멀리 있음 -> 적을 향해 이동
+                moveTarget = { x: target.x, y: target.y };
+                
+            } else {
+                // [상황 C] 적이 없음 -> 적 진영 끝(기지 방향)으로 이동
+                const targetX = (ghost.team === 'ALLY') ? (mapContext.width - 32) : 32;
+                moveTarget = { x: targetX, y: ghost.y }; 
+            }
+
+            // 5. 실제 이동 처리 (길찾기 적용)
+            if (moveTarget) {
+                if (ghost.pathTimer <= 0) {
+                    GameLogic.calculatePath(ghost, moveTarget, mapContext.grid, mapContext.tileSize, mapContext.easystar);
+                    ghost.pathTimer = 0.5;
+                }
+
+                if (ghost.path && ghost.path.length > 0) {
+                    const tileSize = mapContext.tileSize;
+                    const nextNode = ghost.path[0];
+                    const worldX = nextNode.x * tileSize + tileSize / 2;
+                    const worldY = nextNode.y * tileSize + tileSize / 2;
+
+                    const distToNode = Math.sqrt((ghost.x - worldX)**2 + (ghost.y - worldY)**2);
+                    
+                    if (distToNode < 5) {
+                        ghost.path.shift();
+                    } else {
+                        const angle = Math.atan2(worldY - ghost.y, worldX - ghost.x);
+                        ghost.x += Math.cos(angle) * ghost.stats.speed * dt;
+                        ghost.y += Math.sin(angle) * ghost.stats.speed * dt;
                     }
                 } else {
-                    // 적을 향해 이동
-                    this.moveTowards(ghost, nearestEnemy.x, nearestEnemy.y, dt);
+                    this.moveTowards(ghost, moveTarget.x, moveTarget.y, dt);
                 }
-            } else {
-                // 적이 없으면 적 기지 방향으로 전진
-                const targetX = (ghost.team === 'ALLY') ? mapContext.width : 0;
-                const targetY = mapContext.height / 2; 
-                this.moveTowards(ghost, targetX, targetY, dt);
             }
         });
     }
 
-    // ★ [4단계 추가] 실제 데미지를 입히는 함수 분리
-    executeAttack(attacker, allGhosts, target = null) {
-        // 타겟이 명시되지 않았다면(캐스팅 후) 다시 가장 가까운 적 찾기
-        if (!target) {
+    processDelayedActions(simTime, delayedActions, allGhosts) {
+        for (let i = delayedActions.length - 1; i >= 0; i--) {
+            const action = delayedActions[i];
+            if (simTime >= action.hitTime) {
+                if (action.target && action.target.active) {
+                    this.applyDamage(action.attacker, action.target, action.damage, allGhosts);
+                }
+                delayedActions.splice(i, 1);
+            }
+        }
+    }
+
+    executeAttack(attacker, allGhosts, target = null, simTime = 0, delayedActions = []) {
+        if (!target || !target.active) {
             let minDst = Infinity;
             allGhosts.forEach(other => {
                 if (other.active && other.team !== attacker.team && !other.isStealthed) {
                     const d = Phaser.Math.Distance.Between(attacker.x, attacker.y, other.x, other.y);
-                    if (d < minDst) {
-                        minDst = d;
-                        target = other;
-                    }
+                    if (d < minDst) { minDst = d; target = other; }
                 }
             });
         }
 
-        // 여전히 타겟이 유효하고 사거리 내에 있는지 확인 (캐스팅 중 적이 죽거나 도망갔을 수 있음)
         if (target && target.active) {
             const dist = Phaser.Math.Distance.Between(attacker.x, attacker.y, target.x, target.y);
-            // 약간의 관용 거리(+20)를 주어 캐스팅 중 살짝 멀어져도 맞게 처리
+            
             if (dist <= attacker.stats.range + 20) {
-                let damage = attacker.stats.damage || 10;
-                target.currentHp -= damage;
+                const damage = attacker.stats.damage || 10;
+                const projSpeed = attacker.stats.projectileSpeed || 0;
 
-                // [3단계] 흡혈 유물 효과
-                if (attacker.team === 'ALLY' && this.hasArtifact('vampire')) {
-                    const heal = damage * 0.2; 
-                    attacker.currentHp = Math.min(attacker.currentHp + heal, attacker.stats.hp);
+                if (projSpeed > 0) {
+                    const travelTime = dist / projSpeed; 
+                    delayedActions.push({
+                        hitTime: simTime + travelTime,
+                        attacker: attacker,
+                        target: target,
+                        damage: damage
+                    });
+                } else {
+                    this.applyDamage(attacker, target, damage, allGhosts);
                 }
-
-                this.checkDeath(target, allGhosts);
             }
         }
+    }
+
+    applyDamage(attacker, target, damage, allGhosts) {
+        target.currentHp -= damage;
+
+        if (attacker.team === 'ALLY' && this.hasArtifact('vampire')) {
+            const heal = damage * 0.2; 
+            attacker.currentHp = Math.min(attacker.currentHp + heal, attacker.stats.hp);
+        }
+
+        this.checkDeath(target, allGhosts);
     }
 
     checkDeath(unit, allGhosts) {
@@ -254,7 +341,6 @@ processPlans(simTime, plans, ghosts, mapContext) {
             unit.active = false;
             unit.currentHp = 0;
 
-            // [3단계] 화약통 유물 효과
             if (unit.team === 'ALLY') {
                 if (this.hasArtifact('gunpowder')) {
                     this.triggerExplosion(unit.x, unit.y, 100, 50, 'ENEMY', allGhosts);

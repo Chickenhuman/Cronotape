@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Chrono Tape - Event Editor</title>
+    <style>
+        body { background: #111; color: #fff; font-family: sans-serif; padding: 20px; display: flex; gap: 20px; }
+        .panel { background: #222; padding: 20px; border-radius: 8px; border: 1px solid #444; width: 45%; }
+        h2 { color: #ffcc00; margin-top: 0; }
+        label { display: block; margin-top: 10px; color: #aaa; font-size: 12px; }
+        input, textarea, select { width: 100%; background: #333; border: 1px solid #555; color: #fff; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+        button { background: #2980b9; color: white; border: none; padding: 10px 20px; cursor: pointer; margin-top: 20px; font-weight: bold; }
+        button:hover { background: #3498db; }
+        .choice-box { background: #333; padding: 10px; margin-top: 10px; border-left: 3px solid #ffcc00; }
+        pre { background: #000; padding: 10px; border: 1px solid #444; color: #0f0; white-space: pre-wrap; word-break: break-all; }
+    </style>
+</head>
+<body>
+
+    <div class="panel">
+        <h2>📝 새 이벤트 작성</h2>
+        
+        <label>이벤트 ID (영문)</label>
+        <input type="text" id="evt-id" placeholder="예: ancient_shrine">
+        
+        <label>제목</label>
+        <input type="text" id="evt-title" placeholder="예: 고대의 제단">
+        
+        <label>내용 (줄바꿈 가능)</label>
+        <textarea id="evt-desc" rows="4" placeholder="이벤트 상황을 묘사하세요..."></textarea>
+        
+        <label>등장 조건 (JS 코드, 비워두면 무조건 등장)</label>
+        <input type="text" id="evt-req" placeholder="예: data.currentHp < 50">
+        
+        <h3 style="margin-top: 20px; border-bottom: 1px solid #555; padding-bottom: 5px;">선택지 관리</h3>
+        <div id="choices-container"></div>
+        <button onclick="addChoice()" style="background: #444; width: 100%; margin-top:10px;">+ 선택지 추가</button>
+
+        <button onclick="generateCode()" style="width: 100%; font-size: 18px; margin-top: 30px;">💾 코드 생성</button>
+    </div>
+
+    <div class="panel">
+        <h2>📤 생성된 코드</h2>
+        <p style="color:#888; font-size:12px;">아래 코드를 복사해서 <b>js/data/EventData.js</b> 파일에 붙여넣으세요.</p>
+        <pre id="output-code">// 여기에 코드가 나타납니다.</pre>
+        <button onclick="copyCode()" style="background: #27ae60;">📋 클립보드 복사</button>
+    </div>
+
+    <script>
+        function addChoice() {
+            const container = document.getElementById('choices-container');
+            const idx = container.children.length + 1;
+            const div = document.createElement('div');
+            div.className = 'choice-box';
+            div.innerHTML = `
+                <div style="font-weight:bold; color:#ffcc00; margin-bottom:5px;">선택지 #${idx}</div>
+                <label>버튼 텍스트</label>
+                <input type="text" class="c-text" placeholder="예: [기도] 체력 회복">
+                <label>선택 조건 (JS 코드, 비워두면 항상 가능)</label>
+                <input type="text" class="c-req" placeholder="예: data.gold >= 50">
+                <label>효과 스크립트 (결과 메시지 리턴 필수)</label>
+                <textarea class="c-effect" rows="2" placeholder="예: data.currentHp += 20; return '체력이 회복되었습니다.';"></textarea>
+                <button onclick="this.parentElement.remove()" style="background:#c0392b; padding:5px 10px; font-size:12px; margin-top:5px;">삭제</button>
+            `;
+            container.appendChild(div);
+        }
+
+        function generateCode() {
+            const id = document.getElementById('evt-id').value || 'evt_' + Date.now();
+            const title = document.getElementById('evt-title').value;
+            const desc = document.getElementById('evt-desc').value;
+            const req = document.getElementById('evt-req').value;
+
+            const choicesDivs = document.querySelectorAll('.choice-box');
+            let choicesCode = '';
+
+            choicesDivs.forEach(div => {
+                const text = div.querySelector('.c-text').value;
+                const cReq = div.querySelector('.c-req').value;
+                const effect = div.querySelector('.c-effect').value;
+
+                choicesCode += `
+            {
+                text: "${text}",
+                req: ${cReq ? `(data) => ${cReq}` : 'null'},
+                effect: (scene, data) => {
+                    ${effect}
+                }
+            },`;
+            });
+
+            const finalCode = `
+    {
+        id: "${id}",
+        title: "${title}",
+        desc: \`${desc}\`,
+        req: ${req ? `(data) => ${req}` : 'null'},
+        choices: [${choicesCode}
+        ]
+    },`;
+
+            document.getElementById('output-code').innerText = finalCode;
+        }
+
+        function copyCode() {
+            const code = document.getElementById('output-code').innerText;
+            navigator.clipboard.writeText(code).then(() => alert("복사되었습니다!"));
+        }
+
+        // 초기 선택지 1개 추가
+        addChoice();
+    </script>
+</body>
+</html>

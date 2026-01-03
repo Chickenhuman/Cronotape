@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Chrono Tape - Data Editor</title>
+    <style>
+        body { background: #111; color: #fff; font-family: 'Segoe UI', sans-serif; padding: 20px; display: flex; gap: 20px; }
+        .container { display: flex; width: 100%; gap: 20px; }
+        
+        /* 왼쪽 입력 패널 */
+        .input-panel { background: #222; padding: 20px; border-radius: 8px; border: 1px solid #444; width: 50%; }
+        
+        /* 오른쪽 출력 패널 */
+        .output-panel { background: #222; padding: 20px; border-radius: 8px; border: 1px solid #444; width: 50%; display: flex; flex-direction: column; }
+        
+        h2 { color: #ffcc00; margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        h3 { color: #4caf50; margin: 20px 0 10px 0; font-size: 16px; }
+
+        label { display: block; margin-top: 10px; color: #aaa; font-size: 12px; }
+        input, textarea, select { width: 100%; background: #333; border: 1px solid #555; color: #fff; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+        input:focus, textarea:focus { border-color: #ffcc00; outline: none; }
+        
+        .row { display: flex; gap: 10px; }
+        .col { flex: 1; }
+
+        button { background: #2980b9; color: white; border: none; padding: 12px; cursor: pointer; margin-top: 20px; font-weight: bold; width: 100%; border-radius: 4px; }
+        button:hover { background: #3498db; }
+        button.copy-btn { background: #27ae60; margin-top: auto; }
+        
+        /* 탭 스타일 */
+        .tabs { margin-bottom: 20px; display: flex; gap: 10px; }
+        .tab-btn { background: #333; border: 1px solid #555; padding: 10px 20px; cursor: pointer; color: #aaa; width: auto; margin-top: 0; }
+        .tab-btn.active { background: #ffcc00; color: #000; border-color: #ffcc00; font-weight: bold; }
+
+        pre { background: #000; padding: 15px; border: 1px solid #444; color: #0f0; white-space: pre-wrap; word-break: break-all; height: 400px; overflow-y: auto; font-family: 'Consolas', monospace; }
+        
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <div style="position:fixed; top:0; left:0; width:100%; height:100%; z-index:-1; pointer-events:none;"></div>
+
+    <div class="container">
+        <div class="input-panel">
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('unit')">⚔️ 유닛 에디터</button>
+                <button class="tab-btn" onclick="switchTab('commander')">👑 지휘관 에디터</button>
+            </div>
+
+            <div id="form-unit">
+                <div class="row">
+                    <div class="col">
+                        <label>유닛 ID (예: Unit-검사)</label>
+                        <input type="text" id="u-id" placeholder="Unit-NewName">
+                    </div>
+                    <div class="col">
+                        <label>표시 이름</label>
+                        <input type="text" id="u-name" placeholder="새로운 유닛">
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col">
+                        <label>소환 코스트</label>
+                        <input type="number" id="u-cost" value="3">
+                    </div>
+                    <div class="col">
+                        <label>소환 마릿수</label>
+                        <input type="number" id="u-count" value="1">
+                    </div>
+                </div>
+
+                <h3>기본 스탯</h3>
+                <div class="row">
+                    <div class="col"><label>체력 (HP)</label><input type="number" id="u-hp" value="100"></div>
+                    <div class="col"><label>공격력 (DMG)</label><input type="number" id="u-dmg" value="10"></div>
+                    <div class="col"><label>방어력 (DEF)</label><input type="number" id="u-def" value="0"></div>
+                </div>
+                <div class="row">
+                    <div class="col"><label>공격 속도 (초)</label><input type="number" id="u-ats" value="1.0" step="0.1"></div>
+                    <div class="col"><label>사거리 (Range)</label><input type="number" id="u-range" value="50"></div>
+                    <div class="col"><label>이동 속도 (Speed)</label><input type="number" id="u-speed" value="60"></div>
+                </div>
+
+                <h3>상세 설정</h3>
+                <div class="row">
+                    <div class="col"><label>타입 (Melee / Range)</label>
+                        <select id="u-type">
+                            <option value="Melee">근거리 (Melee)</option>
+                            <option value="Range">원거리 (Range)</option>
+                        </select>
+                    </div>
+                    <div class="col"><label>투사체 속도 (0=즉발)</label><input type="number" id="u-proj" value="0"></div>
+                </div>
+                
+                <label>특성 (콤마로 구분, 예: tank, stun)</label>
+                <input type="text" id="u-traits" placeholder="heavy, stun">
+
+                <label>설명 (툴팁 표시용)</label>
+                <textarea id="u-desc" rows="2" placeholder="단단한 갑옷을 입고 적의 공격을 버팁니다."></textarea>
+
+                <button onclick="generateUnit()">💾 유닛 코드 생성</button>
+            </div>
+
+            <div id="form-commander" class="hidden">
+                <div class="row">
+                    <div class="col">
+                        <label>지휘관 ID (영문)</label>
+                        <input type="text" id="c-id" placeholder="knight_king">
+                    </div>
+                    <div class="col">
+                        <label>표시 이름</label>
+                        <input type="text" id="c-name" placeholder="기사단장">
+                    </div>
+                </div>
+                
+                <label>칭호 (Title)</label>
+                <input type="text" id="c-title" placeholder="불멸의 수호자">
+
+                <div class="row">
+                    <div class="col">
+                        <label>스킬 타입</label>
+                        <select id="c-type">
+                            <option value="PASSIVE_AURA">패시브 오라 (Passive)</option>
+                            <option value="ACTIVE_ATK">액티브 공격 (Active Attack)</option>
+                            <option value="ACTIVE_BUFF">액티브 버프 (Active Buff)</option>
+                            <option value="SUMMON">소환 (Summon)</option>
+                        </select>
+                    </div>
+                    <div class="col">
+                        <label>쿨타임 (초)</label>
+                        <input type="number" id="c-cooldown" value="30">
+                    </div>
+                </div>
+
+                <label>스킬 설명</label>
+                <textarea id="c-desc" rows="3" placeholder="30초마다 전장의 모든 아군에게 보호막을 부여합니다."></textarea>
+                
+                <label>이미지 경로 (assetKey)</label>
+                <input type="text" id="c-img" value="cmd_knight">
+
+                <button onclick="generateCommander()">💾 지휘관 코드 생성</button>
+            </div>
+        </div>
+
+        <div class="output-panel">
+            <h2 id="output-title">📤 생성된 코드</h2>
+            <p style="color:#888; font-size:12px;">아래 코드를 복사해서 <b>js/data.js</b> 파일에 붙여넣으세요.</p>
+            <pre id="output-code">// 코드가 여기에 표시됩니다.</pre>
+            <button class="copy-btn" onclick="copyCode()">📋 클립보드 복사</button>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('form-unit').classList.add('hidden');
+            document.getElementById('form-commander').classList.add('hidden');
+
+            if (tab === 'unit') {
+                document.querySelectorAll('.tab-btn')[0].classList.add('active');
+                document.getElementById('form-unit').classList.remove('hidden');
+                document.getElementById('output-title').innerText = "📤 생성된 유닛 코드";
+            } else {
+                document.querySelectorAll('.tab-btn')[1].classList.add('active');
+                document.getElementById('form-commander').classList.remove('hidden');
+                document.getElementById('output-title').innerText = "📤 생성된 지휘관 코드";
+            }
+        }
+
+        function generateUnit() {
+            const id = document.getElementById('u-id').value || 'Unit-' + Date.now();
+            const name = document.getElementById('u-name').value;
+            const cost = document.getElementById('u-cost').value;
+            const count = document.getElementById('u-count').value;
+            const hp = document.getElementById('u-hp').value;
+            const dmg = document.getElementById('u-dmg').value;
+            const def = document.getElementById('u-def').value;
+            const ats = document.getElementById('u-ats').value;
+            const range = document.getElementById('u-range').value;
+            const speed = document.getElementById('u-speed').value;
+            const type = document.getElementById('u-type').value;
+            const proj = document.getElementById('u-proj').value;
+            const desc = document.getElementById('u-desc').value;
+            
+            const traitsRaw = document.getElementById('u-traits').value;
+            const traits = traitsRaw ? traitsRaw.split(',').map(t => `'${t.trim()}'`).join(', ') : '';
+
+            const code = `
+    "${id}": {
+        name: "${name}",
+        cost: ${cost},
+        count: ${count},
+        hp: ${hp},
+        damage: ${dmg},
+        defense: ${def},
+        attackSpeed: ${ats},
+        range: ${range},
+        speed: ${speed},
+        type: "${type}",
+        projectileSpeed: ${proj},
+        traits: [${traits}],
+        width: 30,
+        height: 30,
+        desc: "${desc}"
+    },`;
+
+            document.getElementById('output-code').innerText = code;
+        }
+
+        function generateCommander() {
+            const id = document.getElementById('c-id').value || 'cmd_' + Date.now();
+            const name = document.getElementById('c-name').value;
+            const title = document.getElementById('c-title').value;
+            const type = document.getElementById('c-type').value;
+            const cool = document.getElementById('c-cooldown').value;
+            const desc = document.getElementById('c-desc').value;
+            const img = document.getElementById('c-img').value;
+
+            const code = `
+    "${id}": {
+        name: "${name}",
+        title: "${title}",
+        type: "${type}", // 로직은 BattleScene/CombatManager에서 구현 필요
+        cooldown: ${cool},
+        desc: "${desc}",
+        img: "${img}"
+    },`;
+
+            document.getElementById('output-code').innerText = code;
+        }
+
+        function copyCode() {
+            const code = document.getElementById('output-code').innerText;
+            navigator.clipboard.writeText(code).then(() => alert("복사되었습니다!"));
+        }
+    </script>
+</body>
+</html>

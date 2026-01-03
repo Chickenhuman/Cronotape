@@ -171,9 +171,14 @@ class EnemyAI {
         const stats = UNIT_STATS[unitName];
         if (!stats) return null;
 
-        const isInfiltrator = (stats.traits && stats.traits.includes('침투'));
-        const spawnX = Phaser.Math.Between(this.scene.scale.width - 150, this.scene.scale.width - 50);
-        let spawnY = -1;
+const isInfiltrator = (stats.traits && stats.traits.includes('침투'));
+        
+        // ★ [수정] 소환 X 좌표를 맵 그리드 안쪽으로 안전하게 제한
+        const mapRightEdge = (this.scene.mapWidth * this.scene.tileSize);
+        const safeSpawnX = Math.min(this.scene.scale.width, mapRightEdge) - 80;
+        
+        // 50px 범위 내에서 랜덤
+        const spawnX = Phaser.Math.Between(safeSpawnX - 50, safeSpawnX);        let spawnY = -1;
 
         const lh = analysis.laneHeight || 200; 
         let targetLaneIndex = 1; 

@@ -40,10 +40,13 @@ class TitleScene extends Phaser.Scene {
         const gap = 100; 
 
         // 1. GAME START
-this.createButton(btnX, startY, 'GAME START', () => {
-            // ★ 수정됨: 바로 맵으로 안 가고 지휘관 선택으로 이동
-            this.scene.start('CommanderSelectScene');
-        });
+    this.createButton(btnX, startY, 'GAME START', () => {
+    // ★ 게임 시작 시 데이터 초기화 (새 게임)
+    if (typeof GAME_DATA !== 'undefined') {
+        GAME_DATA.startNewGame(); 
+    }
+    this.scene.start('CommanderSelectScene');
+});
 
         // 2. SETTING
         this.createButton(btnX, startY + gap, 'SETTING', () => {

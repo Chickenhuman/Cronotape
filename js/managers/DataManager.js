@@ -17,8 +17,9 @@ const DEFAULT_GAME_DATA = {
         bossNodeId: -1,
         mapWidth: 2000,     
         mapHeight: 600,
-        // ★ [추가] 클리어한 노드 목록 저장
-        clearedNodes: []
+        clearedNodes: [],
+        // ★ [추가] BattleScene에서 참조하는 변수 초기화
+        currentDistance: 0 
     }
 };
 
@@ -28,19 +29,43 @@ class DataManager {
     }
 
     loadData() {
-        const saved = localStorage.getItem('crono_save_v5'); // 버전 v5로 변경 (데이터 구조 변경 반영)
+        const saved = localStorage.getItem('crono_save_v5');
+        
+        // 1. 항상 최신 기본 데이터를 먼저 로드 (깊은 복사)
+        const baseData = JSON.parse(JSON.stringify(DEFAULT_GAME_DATA));
+
         if (saved) {
-            Object.assign(this, JSON.parse(saved));
+            try {
+                const parsedSave = JSON.parse(saved);
+
+                // 2. 저장된 데이터를 기본 데이터 위에 '안전하게 병합(Merge)'
+                Object.assign(baseData, parsedSave);
+                
+                // 캠페인 데이터 별도 병합
+                if (parsedSave.campaign) {
+                    baseData.campaign = { 
+                        ...JSON.parse(JSON.stringify(DEFAULT_GAME_DATA.campaign)), 
+                        ...parsedSave.campaign 
+                    };
+                }
+
+                // 최종 데이터를 this에 적용
+                Object.assign(this, baseData);
+                console.log("[DataManager] 저장된 데이터 로드 완료");
+
+            } catch (e) {
+                console.error("[DataManager] 세이브 파일 오류. 초기화합니다.", e);
+                this.startNewGame();
+            }
         } else {
-            Object.assign(this, JSON.parse(JSON.stringify(DEFAULT_GAME_DATA)));
+            // 저장된 게 없으면 기본값 사용
+            Object.assign(this, baseData);
             
-            // 덱 초기화 (하드코딩 제거)
             if (typeof STARTER_DECK !== 'undefined') {
                 this.deck = [...STARTER_DECK];
             } else {
                 this.deck = ['Unit-검사', 'Unit-궁수', 'Skill-화염구'];
             }
-
             this.generateNewMap(1); 
         }
     }
@@ -51,10 +76,15 @@ class DataManager {
 
     startNewGame() {
         localStorage.removeItem('crono_save_v5');
-        Object.assign(this, JSON.parse(JSON.stringify(DEFAULT_GAME_DATA)));
+        
+        // 기본 데이터로 리셋
+        const baseData = JSON.parse(JSON.stringify(DEFAULT_GAME_DATA));
+        Object.assign(this, baseData);
         
         if (typeof STARTER_DECK !== 'undefined') {
             this.deck = [...STARTER_DECK];
+        } else {
+            this.deck = ['Unit-검사', 'Unit-궁수', 'Skill-화염구'];
         }
 
         this.generateNewMap(1);
@@ -175,7 +205,8 @@ class DataManager {
             bossNodeId: nodes[nodes.length - 1].id,
             mapWidth: width,
             mapHeight: height,
-            clearedNodes: [] // ★ 초기화
+            clearedNodes: [],
+            currentDistance: 0 // 초기화
         };
         
         this.saveData();
@@ -197,38 +228,29 @@ class DataManager {
 
         const dist = Phaser.Math.Distance.Between(curr.x, curr.y, target.x, target.y);
         
-        // (데드라인 압박 공식: 기본 유지)
+        // 데드라인 전진
         const difficulty = 1.0 + (this.stage * 0.1); 
         const advance = dist * difficulty * 0.8; 
         
         this.campaign.deadlineX += advance;
         this.campaign.currentNodeId = targetId;
+        
+        // ★ [추가] 현재 플레이어의 거리 업데이트 (BattleScene UI용)
+        this.campaign.currentDistance = Math.floor(target.x);
 
         this.saveData();
         return true;
     }
 
-    // ★ [추가] 현재 노드 클리어 처리 함수
     completeCurrentNode() {
         const currId = this.campaign.currentNodeId;
-        
-        // 이미 클리어된 노드가 아니라면 목록에 추가
         if (!this.campaign.clearedNodes.includes(currId)) {
             this.campaign.clearedNodes.push(currId);
-            
-            // 해당 노드 객체를 찾아서 타입 변경 (다음에 방문 시 전투 안 걸리게)
             const node = this.getNode(currId);
-            if (node) {
-                // 원래 타입이 무엇이었든 EMPTY(빈 땅) 혹은 VISITED로 변경
-                // 단, SHOP이나 BOSS 등은 유지하고 싶다면 조건문 추가 가능. 
-                // 여기서는 전투 노드만 없애는 것으로 가정
-                if (node.type === 'BATTLE' || node.type === 'ELITE') {
-                    node.type = 'EMPTY'; 
-                }
+            if (node && (node.type === 'BATTLE' || node.type === 'ELITE')) {
+                node.type = 'EMPTY'; 
             }
-            
             this.saveData();
-            console.log(`[DataManager] 노드 ${currId} 클리어 완료.`);
         }
     }
 
@@ -242,4 +264,5 @@ class DataManager {
     }
 }
 
-const GAME_DATA = new DataManager();
+// ★ [핵심] window 객체에 할당하여 전역 접근 보장
+window.GAME_DATA = new DataManager();
