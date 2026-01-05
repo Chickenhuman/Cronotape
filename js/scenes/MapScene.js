@@ -122,14 +122,25 @@ class MapScene extends Phaser.Scene {
         }
     }
 
-  handleActionClick() {
-        // 1. 다른 노드로 이동하는 경우
+handleActionClick() {
+        console.log("🖱️ 액션 버튼 클릭됨"); // 클릭 확인용 로그
+
+        // [CASE 1] 지도에서 갈 곳(동그라미)을 이미 선택한 경우 -> 이동 시작!
         if (this.selectedNode) {
+            console.log("🚀 이동 시작: " + this.selectedNode.id);
             const target = this.selectedNode;
             this.selectedNode = null; 
-            GAME_DATA.moveToNode(target.id);
+            
+            // 데이터 매니저에게 이동 처리 요청 (에러 방지용 try-catch 추가)
+            try {
+                if (GAME_DATA && GAME_DATA.moveToNode) {
+                    GAME_DATA.moveToNode(target.id);
+                }
+            } catch (e) {
+                console.error("이동 데이터 처리 중 오류:", e);
+            }
 
-            // 데드라인 애니메이션
+            // 데드라인(붉은 선) 추격 애니메이션
             this.tweens.add({
                 targets: [this.deadlineLine, this.deadlineOverlay],
                 x: GAME_DATA.campaign.deadlineX,
@@ -138,13 +149,13 @@ class MapScene extends Phaser.Scene {
                 onUpdate: () => { this.deadlineOverlay.x = this.deadlineLine.x; }
             });
             
-            // 카메라 이동 및 말 이동 연출
+            // 카메라 이동 연출
             this.cameras.main.pan(target.x, target.y, 800, 'Power2');
             
-            // ★ [핵심] 이동 애니메이션(0.8초)이 끝난 후 '즉시 진입'
+            // 이동 애니메이션(0.8초) 후 도착 처리
             this.time.delayedCall(800, () => {
-                this.checkEvents(target); // 게임오버 체크
-                this.enterNode(target);   // 노드 진입 (전투/이벤트 실행)
+                this.checkEvents(target); 
+                this.enterNode(target);   
             });
 
             this.drawMap(); 
@@ -152,10 +163,46 @@ class MapScene extends Phaser.Scene {
             return;
         }
 
-        // 2. 현재 노드 재진입 (예외 상황)
+        // [CASE 2] 갈 곳을 선택하지 않고 버튼만 누른 경우 -> 경고!!
         const currNode = GAME_DATA.getNode(GAME_DATA.campaign.currentNodeId);
+        
+        // 출발지거나 이미 클리어한 곳이면 "어디로 갈지 정해줘!"라고 강력하게 알림
+        if (currNode.type === 'START' || currNode.type === 'EMPTY') {
+            console.log("⚠️ 이동할 노드가 선택되지 않음");
+
+            // 1. 상단 텍스트 경고
+            this.infoText.setText("⚠️ 지도 동그라미를 눌러 이동할 곳을 선택하세요!");
+            this.infoText.setColor('#ff5555');
+            
+            // 2. ★ [추가] 버튼 자체를 좌우로 흔들기 (확실한 피드백)
+            this.tweens.add({
+                targets: this.actionBtnContainer,
+                x: this.actionBtnContainer.x + 10, // 오른쪽으로 살짝 갔다가
+                duration: 50,
+                yoyo: true, // 다시 돌아옴
+                repeat: 5,  // 5번 반복 (달달달 떨림)
+                ease: 'Sine.easeInOut'
+            });
+
+            // 3. ★ [추가] 버튼 텍스트를 잠시 "목적지 선택!"으로 변경
+            const btnText = this.actionBtnContainer.getByName('btn_text');
+            const originalText = btnText.text;
+            btnText.setText("🚫 목적지 선택 필요!");
+            
+            // 1초 뒤에 원래대로 복구
+            this.time.delayedCall(1000, () => {
+                this.infoText.setColor('#eeeeee');
+                this.updateUI(); // 상단 텍스트 복구
+                if(btnText.active) btnText.setText(originalText); // 버튼 텍스트 복구
+            });
+
+            return; // 아무 일도 하지 않고 종료
+        }
+
+        // 전투나 상점 등 '진입'이 필요한 노드라면 재진입 시도 (재클릭 시)
         this.enterNode(currNode);
     }
+    
     // ★ [신규] 노드 타입별 진입 처리 함수 분리
     enterNode(node) {
         console.log(`[MapScene] 노드 진입: ${node.type}`);

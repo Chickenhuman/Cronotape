@@ -41,8 +41,8 @@ const DefaultMap = {
     tileSize: 50,
     
     // ★ 수정됨: 화면 크기에 맞춰 칸 수 확장
-    mapWidth: 26,  // 1280px 커버 (26 * 50 = 1300)
-    mapHeight: 15, // 720px 커버 (15 * 50 = 750)
+    mapWidth: 32,  // 1280px 커버 (26 * 50 = 1300)
+    mapHeight: 18, // 720px 커버 (15 * 50 = 750)
     
     deployLimit: 266, // 아군 배치 한계선
 
