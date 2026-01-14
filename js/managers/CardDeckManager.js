@@ -57,6 +57,11 @@ class CardDeckManager {
     // ============================================================
     // 🎨 UI 렌더링 (DOM 조작)
     // ============================================================
+   // js/managers/CardDeckManager.js 내부
+
+    // ============================================================
+    // 🎨 UI 렌더링 (핸드)
+    // ============================================================
     renderHand(newlyAddedCount = 0) {
         const handArea = document.getElementById('hand-area');
         const deckPile = document.getElementById('deck-pile');
@@ -64,109 +69,61 @@ class CardDeckManager {
 
         handArea.innerHTML = ''; 
         
-        const fileMapper = {
-            '검사': 'swordman', '궁수': 'archer', '힐러': 'healer',
-            '방벽': 'wall', '암살자': 'assassin', '적군': 'enemy',
-            '화염구': 'fireball', '돌멩이': 'stone', '방어막': 'shield', '얼음': 'ice'
-        };
-
         const totalCards = this.hand.length;
         const centerIndex = (totalCards - 1) / 2;
         const newCardStartIndex = totalCards - newlyAddedCount;
 
         this.hand.forEach((cardStr, index) => {
-            const [type, name] = cardStr.split('-');
-            const baseStat = (type === 'Unit') ? UNIT_STATS[name] : SKILL_STATS[name];
+            // ★ [핵심 수정] 직접 HTML을 만들지 않고 '만능 생성기'를 호출합니다.
+            // 이렇게 하면 createCardElement에 추가한 보너스 타임 기능이 여기도 자동 적용됩니다.
+            const cardDiv = this.createCardElement(cardStr);
             
-            // ★ BattleScene의 메서드 사용
-            const finalStat = this.scene.getAdjustedStats(type, name);
-            
-            const fileName = fileMapper[name] || name; 
-            const imgPath = `assets/chars/${fileName}.png`; 
-            const imgTag = `<img src="${imgPath}" class="card-bg-img" onerror="this.src='assets/noimg.png';">`;
-            const frameClass = (type === 'Unit') ? 'frame-unit' : 'frame-skill';
+            // 핸드 전용 추가 스타일 (뷰어용 스타일 제거 및 핸드용 클래스 확인)
+            cardDiv.classList.remove('card-in-viewer');
+            cardDiv.classList.add('card'); 
 
-            const cardDiv = document.createElement('div');
-            cardDiv.className = 'card';
+            const [type, name] = cardStr.split('-');
             if (type === 'Unit') cardDiv.classList.add('card-unit');
             else cardDiv.classList.add('card-skill');
             
+            // 선택 상태 표시
             const isSelected = (index === this.selectedCardIdx);
             if (isSelected) cardDiv.classList.add('selected');
+            
             const isOverweight = this.hand.length > MAX_HAND;
-            if (isSelected && isOverweight) {
-                cardDiv.classList.add('shake-warning');
+            if (isSelected && isOverweight) cardDiv.classList.add('shake-warning');
+
+            // 툴팁 보이게 설정 (선택 시 강제 표시 등)
+            const tooltip = cardDiv.querySelector('.card-tooltip');
+            if (tooltip && isSelected) {
+                tooltip.style.visibility = 'visible';
+                tooltip.style.opacity = '1';
             }
-
-            // 색상 함수
-            const getColorStyle = (current, base, isCost = false) => {
-                if (current === base) return ''; 
-                const isGood = isCost ? (current < base) : (current > base);
-                return isGood ? 'color:#00ff00;' : 'color:#ff5555;';
-            };
-
-            let statsHtml = '';
-            if (type === 'Unit') {
-                const dmgStyle = getColorStyle(finalStat.damage, baseStat.damage);
-                const hpStyle = getColorStyle(finalStat.hp, baseStat.hp);
-                statsHtml = `<div class="stat-badge stat-atk" style="${dmgStyle}">${Math.abs(finalStat.damage)}</div>
-                             <div class="stat-badge stat-hp" style="${hpStyle}">${finalStat.hp}</div>`;
-            }
-            let countHtml = (type === 'Unit' && finalStat.count && finalStat.count > 1) 
-                ? `<div class="card-count">x${finalStat.count}</div>` : '';
-            
-            let traitsHtml = '';
-            if (type === 'Unit' && finalStat.race) traitsHtml += `<span class="trait-tag tag-race">${finalStat.race}</span>`;
-            if (finalStat.traits) finalStat.traits.forEach(t => traitsHtml += `<span class="trait-tag tag-trait">${t}</span>`);
-
-            const costStyle = getColorStyle(finalStat.cost, baseStat.cost, true);
-            
-            let tooltipContent = '';
-            const toolCostStyle = costStyle ? `style="${costStyle}"` : '';
-            if (type === 'Unit') {
-                tooltipContent = `
-                    <div class="tooltip-row"><span>코스트</span> <span class="tooltip-val" ${toolCostStyle}>${finalStat.cost}</span></div>
-                    <div class="tooltip-row"><span>공격력</span> <span class="tooltip-val">${finalStat.damage}</span></div>
-                    <div class="tooltip-row"><span>체력</span> <span class="tooltip-val">${finalStat.hp}</span></div>
-                `;
-            } else {
-                tooltipContent = `<div class="tooltip-row"><span>코스트</span> <span class="tooltip-val" ${toolCostStyle}>${finalStat.cost}</span></div>`;
-            }
-            
-            const tooltipStyle = isSelected ? 'visibility:visible; opacity:1;' : '';
-
-            cardDiv.innerHTML = `
-                ${imgTag}
-                <div class="card-frame ${frameClass}"></div>
-                <div class="card-cost" style="${costStyle}">${finalStat.cost}</div>
-                ${countHtml}
-                <div class="card-name">${name}</div>
-                <div class="card-traits">${traitsHtml}</div>
-                <div class="card-type">${type}</div>
-                ${statsHtml}
-                <div class="card-tooltip" style="${tooltipStyle}">
-                    <div class="tooltip-header">${name} <span style="font-size:10px; color:#aaa;">(${type})</span></div>
-                    ${tooltipContent}
-                </div>
-            `;
 
             handArea.appendChild(cardDiv);
 
-            // 위치 계산 및 애니메이션
+            // --------------------------------------------------------
+            // 아래는 기존의 애니메이션 및 이벤트 로직 (그대로 유지)
+            // --------------------------------------------------------
+
+            // 위치 계산 및 애니메이션 (부채꼴)
             const rotateAngle = (index - centerIndex) * 5;
             const translateY = Math.abs(index - centerIndex) * 5;
             const finalTransform = `rotate(${rotateAngle}deg) translateY(${translateY}px)`;
 
+            // 드로우 애니메이션
             if (deckPile && index >= newCardStartIndex) {
                 cardDiv.classList.add('no-transition');
                 const deckRect = deckPile.getBoundingClientRect(); 
                 const cardRect = cardDiv.getBoundingClientRect();
-                const deltaX = (deckRect.left + deckRect.width / 2) - (cardRect.left + cardRect.width / 2);
-                const deltaY = (deckRect.top + deckRect.height / 2) - (cardRect.top + cardRect.height / 2);
-
-                cardDiv.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(0.2) rotate(-180deg)`;
+                // 덱이 없을 경우(초기화 등) 대비
+                if (deckRect.width > 0 && cardRect.width > 0) {
+                    const deltaX = (deckRect.left + deckRect.width / 2) - (cardRect.left + cardRect.width / 2);
+                    const deltaY = (deckRect.top + deckRect.height / 2) - (cardRect.top + cardRect.height / 2);
+                    cardDiv.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(0.2) rotate(-180deg)`;
+                }
                 cardDiv.style.opacity = '0';
-                void cardDiv.offsetWidth;
+                void cardDiv.offsetWidth; 
 
                 setTimeout(() => {
                     cardDiv.classList.remove('no-transition');
@@ -177,7 +134,7 @@ class CardDeckManager {
                 if (!isSelected) cardDiv.style.transform = finalTransform;
             }
 
-            // 이벤트 리스너
+            // 이벤트 리스너 재정의
             cardDiv.onmouseenter = () => { cardDiv.style.transform = ''; cardDiv.style.zIndex = '100'; };
             cardDiv.onmouseleave = () => { 
                 cardDiv.style.zIndex = '';
@@ -186,19 +143,13 @@ class CardDeckManager {
 
             cardDiv.onclick = (e) => { 
                 e.stopPropagation();
-                
-                const isOverweight = this.hand.length > MAX_HAND;
-
                 if (this.selectedCardIdx === index) {
                     this.selectedCardIdx = -1;
-                    // ★ BattleScene의 시각화 함수 호출
                     if (this.scene.drawDeploymentZones) this.scene.drawDeploymentZones(false); 
                 } else {
                     this.selectedCardIdx = index; 
                     if (this.scene.drawDeploymentZones) this.scene.drawDeploymentZones(true); 
                 }
-                
-                if (isOverweight) cardDiv.classList.add('shake-warning');
                 this.renderHand(); 
             };
             
@@ -217,6 +168,57 @@ class CardDeckManager {
         if (deckCount) deckCount.innerText = this.deck.length;
         if (discardCount) discardCount.innerText = this.discard.length;
         if (sealCount) sealCount.innerText = this.sealed.length;
+    }
+
+    // [보상용] 랜덤 카드 3장 생성 (중복 방지, 등급 확률 적용)
+    generateRewards() {
+        const rewards = [];
+        const maxRewards = 3;
+        
+        // 등장 가능한 모든 카드 리스트 (기지, 적군 제외)
+        const allUnits = Object.keys(UNIT_STATS).filter(k => k !== '기지' && k !== '적군');
+        const allSkills = Object.keys(SKILL_STATS);
+        
+        // 통합 리스트 (타입 정보 포함)
+        let pool = [
+            ...allUnits.map(name => ({ type: 'Unit', name, rarity: UNIT_STATS[name].rarity })),
+            ...allSkills.map(name => ({ type: 'Skill', name, rarity: SKILL_STATS[name].rarity }))
+        ];
+
+        // ★ 등급별 확률 가중치 (백분율)
+        // 일반: 60%, 희귀: 30%, 전설: 10%
+        const weights = {
+            'COMMON': 60,
+            'RARE': 30,
+            'LEGENDARY': 10
+        };
+
+        while(rewards.length < maxRewards) {
+            // 1. 이번에 뽑을 등급 결정
+            const rand = Math.random() * 100;
+            let targetRarity = 'COMMON';
+            
+            if (rand > 90) targetRarity = 'LEGENDARY'; // 상위 10%
+            else if (rand > 60) targetRarity = 'RARE'; // 상위 40% (60~90)
+            
+            // 2. 해당 등급의 카드만 필터링
+            const candidates = pool.filter(c => c.rarity === targetRarity);
+            
+            // (만약 해당 등급 카드가 하나도 없으면 일반 등급에서 뽑음 - 안전장치)
+            const finalPool = (candidates.length > 0) ? candidates : pool.filter(c => c.rarity === 'COMMON');
+
+            // 3. 무작위 1장 선택
+            const pick = finalPool[Math.floor(Math.random() * finalPool.length)];
+            
+            // 4. 중복 체크 (이미 뽑은 보상에 없으면 추가)
+            // (이미 덱에 있는 카드는 또 나와도 됨 - 강화 재료나 복사 느낌)
+            const exists = rewards.some(r => r.name === pick.name && r.type === pick.type);
+            if (!exists) {
+                rewards.push(`${pick.type}-${pick.name}`);
+            }
+        }
+        
+        return rewards;
     }
 
     // ============================================================
@@ -382,42 +384,152 @@ class CardDeckManager {
         if (closeBtn) closeBtn.onclick = () => closeViewer();
         modal.style.display = 'flex';
     }
-
+// js/managers/CardDeckManager.js 내부
+// ★ [수정] 카드 생성 함수 (보너스 타임 표시 기능 추가됨)
     createCardElement(cardStr) {
-        // (뷰어용 카드 생성 로직 - BattleScene에서 복사해옴)
         const [type, name] = cardStr.split('-');
-        const finalStat = this.scene.getAdjustedStats(type, name);
         
+        // 현재 적용된 스탯 가져오기 (BattleScene에 함수가 없으면 기본값 사용 안전장치)
+        let finalStat;
+        if (this.scene && typeof this.scene.getAdjustedStats === 'function') {
+            finalStat = this.scene.getAdjustedStats(type, name);
+        } else {
+            const base = (type === 'Unit') ? UNIT_STATS[name] : SKILL_STATS[name];
+            finalStat = JSON.parse(JSON.stringify(base));
+        }
+        
+        // 파일명 및 경로 자동 매칭
+        let fileName = name;
+        if (finalStat.image) fileName = finalStat.image.replace('img_', '');
+        
+        // 예외 처리용 매퍼
         const fileMapper = {
-            '검사': 'swordman', '궁수': 'archer', '힐러': 'healer',
-            '방벽': 'wall', '암살자': 'assassin', '적군': 'enemy',
+            '검사': 'swordman', '궁수': 'archer', '힐러': 'healer', '방벽': 'wall',
             '화염구': 'fireball', '돌멩이': 'stone', '방어막': 'shield', '얼음': 'ice'
         };
-        const fileName = fileMapper[name] || name; 
-        const imgPath = `assets/chars/${fileName}.png`; 
+        if (fileMapper[name]) fileName = fileMapper[name];
         
-        const div = document.createElement('div');
-        div.className = 'card card-in-viewer'; 
+        const imgPath = `assets/chars/${fileName}.png`; 
         const frameClass = (type === 'Unit') ? 'frame-unit' : 'frame-skill';
+        const rarity = finalStat.rarity || 'COMMON';
 
+        // --------------------------------------------------------
+        // 툴팁 내용 자동 생성
+        // --------------------------------------------------------
+        const statLabels = {
+            cost: '비용',
+            damage: '공격력',
+            hp: '체력',
+            range: '사거리',
+            duration: '지속',
+            value: '수치'
+        };
+
+        let tooltipRows = '';
+        Object.keys(statLabels).forEach(key => {
+            if (finalStat[key] !== undefined) {
+                tooltipRows += `
+                    <div class="tooltip-row">
+                        <span>${statLabels[key]}</span> 
+                        <span class="tooltip-val">${finalStat[key]}</span>
+                    </div>`;
+            }
+        });
+
+        // 설명 텍스트
+        if (finalStat.desc) {
+            tooltipRows += `<div class="tooltip-desc">${finalStat.desc}</div>`;
+        }
+        
+        // ★ [소프트 코딩] 보너스 효과 텍스트 생성
+        const bonusText = this.getBonusText(finalStat.bonusEffect);
+
+        // --------------------------------------------------------
+
+        // 배지 생성
         let statsHtml = '';
         if (type === 'Unit') {
             statsHtml = `<div class="stat-badge stat-atk">${finalStat.damage}</div>
                          <div class="stat-badge stat-hp">${finalStat.hp}</div>`;
         }
+        
         let traitsHtml = '';
-        if (type === 'Unit' && finalStat.race) traitsHtml += `<span class="trait-tag tag-race">${finalStat.race}</span>`;
+        if (finalStat.race) traitsHtml += `<span class="trait-tag tag-race">${finalStat.race}</span>`;
         if (finalStat.traits) finalStat.traits.forEach(t => traitsHtml += `<span class="trait-tag tag-trait">${t}</span>`);
 
+        // ★ [추가] 보너스 타임 표시 배지 (카드 상단에 표시)
+        let timeBonusHtml = '';
+        if (finalStat.bonusTime) {
+            const [start, end] = finalStat.bonusTime;
+            // 예: "⏱ 0~3s"
+            timeBonusHtml = `
+                <div class="time-bonus-badge" style="
+                    position: absolute; top: -8px; right: -8px;
+                    background: #111; border: 1px solid #00ffcc; color: #00ffcc;
+                    border-radius: 8px; padding: 2px 5px; font-size: 10px; font-weight: bold;
+                    z-index: 20; box-shadow: 0 0 5px #00ffcc; letter-spacing: -0.5px;
+                ">
+                    ⏱${start}~${end}s
+                </div>
+            `;
+        }
+
+        const div = document.createElement('div');
+        div.className = 'card card-in-viewer'; 
+
         div.innerHTML = `
-            <img src="${imgPath}" class="card-bg-img" onerror="this.src='assets/noimg.png';">
+            ${timeBonusHtml} <img src="${imgPath}" class="card-bg-img" onerror="this.src='assets/noimg.png';">
             <div class="card-frame ${frameClass}"></div>
             <div class="card-cost">${finalStat.cost}</div>
             <div class="card-name">${name}</div>
             <div class="card-traits">${traitsHtml}</div>
             <div class="card-type">${type}</div>
             ${statsHtml}
+            
+            <div class="card-tooltip">
+                <div class="tooltip-header">${name} <span style="font-size:10px; color:#aaa;">(${rarity})</span></div>
+                ${tooltipRows}
+                ${bonusText ? `
+                    <div style="margin-top: 6px; padding-top: 4px; border-top: 1px dashed #444;">
+                        <span style="color:#00ffcc; font-weight:bold;">✨ 타이밍 보너스 (${finalStat.bonusTime[0]}~${finalStat.bonusTime[1]}s)</span><br>
+                        <span style="color:#ddd; font-size: 11px;">👉 ${bonusText}</span>
+                    </div>` 
+                : ''}
+            </div>
         `;
+        
         return div;
+    }
+
+// js/managers/CardDeckManager.js 내부
+
+    // ★ [추가] 데이터를 읽어 텍스트로 변환하는 번역기
+    getBonusText(effect) {
+        if (!effect) return "";
+
+        // 1. 스탯 이름 한글화 매핑
+        const statNames = {
+            cost: "비용",
+            damage: "공격력",
+            hp: "체력",
+            range: "사거리",
+            value: "수치",
+            duration: "지속시간",
+            stun: "기절"
+        };
+
+        const name = statNames[effect.stat] || effect.stat;
+        const unit = effect.unit || "";
+        const val = effect.val;
+        
+        // 2. 부호 처리 (+, -)
+        const sign = val > 0 ? "+" : ""; // 음수는 자동으로 -가 붙음
+
+        // 3. 특수 케이스 (힐러 등)
+        if (effect.stat === 'damage' && val < 0 && !unit) {
+             return `치유량 +${Math.abs(val)}`;
+        }
+
+        return `${name} ${sign}${val}${unit}`;
     }
 }

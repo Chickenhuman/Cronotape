@@ -117,8 +117,13 @@ class EventManager {
             popup.style.display = 'none';
             popup.innerHTML = ''; // 내용 비우기
         }
+if (this.currentScene && this.currentScene.updateUI) {
+            this.currentScene.updateUI();
+        } else if (this.currentScene && this.currentScene.artifactManager) {
+            // updateUI가 없는 경우를 대비한 안전장치
+            this.currentScene.artifactManager.render();
+        }
     }
 }
-
 // 전역 할당
 window.EventManager = EventManager;

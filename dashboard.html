@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Chrono Tape Dashboard v2</title>
+    <style>
+        /* [스타일] 다크 테마 및 레이아웃 */
+        :root { --bg: #121212; --panel: #1e1e1e; --border: #333; --accent: #ffcc00; --text: #eee; --text-dim: #aaa; }
+        body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; overflow: hidden; }
+        
+        .col-list { width: 300px; border-right: 1px solid var(--border); display: flex; flex-direction: column; background: var(--panel); }
+        .col-edit { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+        .col-preview { width: 420px; border-left: 1px solid var(--border); background: #000; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; }
+
+        h2, h3 { margin: 0; color: var(--accent); font-weight: 600; }
+        h3 { font-size: 16px; margin-bottom: 10px; color: #fff; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        
+        input, select, textarea { background: #2a2a2a; border: 1px solid #444; color: #fff; padding: 8px; border-radius: 4px; width: 100%; box-sizing: border-box; font-family: inherit; margin-bottom: 5px; }
+        input:focus, textarea:focus { border-color: var(--accent); outline: none; }
+        
+        button { background: #333; border: 1px solid #555; color: #fff; padding: 8px 16px; cursor: pointer; border-radius: 4px; transition: 0.2s; font-weight: bold; }
+        button:hover { background: #444; border-color: #777; }
+        button.primary { background: #2980b9; border-color: #2980b9; }
+        button.primary:hover { background: #3498db; }
+        button.danger { background: #c0392b; border-color: #c0392b; }
+
+        .tabs { display: flex; border-bottom: 1px solid var(--border); }
+        .tab-btn { flex: 1; background: transparent; border: none; padding: 12px; color: var(--text-dim); border-bottom: 2px solid transparent; border-radius: 0; }
+        .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); background: rgba(255, 204, 0, 0.05); }
+        
+        .item-list { flex: 1; overflow-y: auto; }
+        .list-item { padding: 12px 15px; border-bottom: 1px solid #2a2a2a; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .list-item:hover { background: #2a2a2a; }
+        .list-item.active { background: rgba(255, 204, 0, 0.1); border-left: 3px solid var(--accent); }
+        .item-sub { font-size: 11px; color: var(--text-dim); }
+
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .form-group label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+        
+        /* 태그 시스템 */
+        .tags-container { display: flex; flex-wrap: wrap; gap: 5px; background: #2a2a2a; border: 1px solid #444; padding: 5px; border-radius: 4px; min-height: 36px; }
+        .tag { background: #444; padding: 2px 8px; border-radius: 12px; font-size: 12px; display: flex; align-items: center; gap: 5px; }
+        .tag-remove { cursor: pointer; color: #ff5555; font-weight: bold; }
+        .tag-input { background: transparent; border: none; padding: 0; width: auto; flex: 1; min-width: 60px; color: #fff; }
+        .tag-input:focus { outline: none; border: none; }
+
+        /* 미리보기 영역 */
+        .preview-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: url('assets/maps/battle_bg1.png') center/cover; position: relative; border-radius: 8px; margin-bottom: 20px; overflow: hidden; }
+        .preview-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.7); pointer-events: none; }
+        
+        .code-area { height: 180px; display: flex; flex-direction: column; gap: 5px; }
+        .code-output { flex: 1; background: #111; color: #0f0; padding: 10px; font-family: monospace; font-size: 11px; resize: none; border: 1px solid #333; }
+
+        /* 카드 미리보기 스타일 (게임 내 CSS 모방) */
+        .card-preview-wrapper { position: relative; width: 140px; height: 200px; transform: scale(1.5); transform-origin: center; z-index: 10; }
+        .card { width: 100%; height: 100%; position: relative; border: 1px solid #444; border-radius: 12px; background: rgba(0,0,0,0.5); }
+        .card-bg-img { position: absolute; top: 10%; left: 10%; width: 75%; height: 75%; object-fit: contain; border-radius: 12px; z-index: 1; }
+        .card-frame { position: absolute; inset: 0; background-size: 100% 100%; z-index: 2; pointer-events: none; }
+        .frame-unit { background-image: url('assets/card_template.png'); }
+        .frame-skill { background-image: url('assets/card_template_skill.png'); }
+        
+        .card-cost { position: absolute; top: 4%; left: 5%; width: 30px; height: 30px; color: #fff; font-weight: 900; font-size: 18px; text-shadow: 0 0 4px #000; display: flex; align-items: center; justify-content: center; z-index: 10; }
+        .card-name { position: absolute; top: 50%; left: 50%; transform: translateX(-50%); width: 80%; text-align: center; font-family: serif; font-size: 14px; font-weight: bold; color: #3e2723; text-shadow: 0 1px 1px rgba(255,255,255,0.5); z-index: 10; white-space: nowrap; }
+        .card-type { position: absolute; bottom: 15%; width: 100%; text-align: center; font-size: 10px; color: #555; font-weight: bold; z-index: 10; }
+        
+        .stat-badge { position: absolute; bottom: 3%; width: 30px; height: 30px; color: #fff; font-size: 18px; font-weight: 900; text-shadow: 0 0 4px #000; display: flex; align-items: center; justify-content: center; z-index: 10; }
+        .stat-atk { bottom: 7%; left: 5%; color: #fff; }
+        .stat-hp { bottom: 7%; right: 5%; color: #fff; }
+
+        .card-traits { position: absolute; top: 64%; left: 50%; transform: translateX(-50%); width: 90%; display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; z-index: 10; }
+        .trait-tag { font-size: 9px; padding: 1px 4px; border-radius: 3px; color: #eee; border: 1px solid #aaa; background: rgba(0,0,0,0.6); }
+        .tag-race { border-color: #0f0; color: #cfc; background: rgba(0,50,0,0.8); }
+    </style>
+</head>
+<body>
+
+    <div class="col-list">
+        <div class="tabs">
+            <button class="tab-btn active" onclick="app.setTab('unit')">⚔️ 유닛</button>
+            <button class="tab-btn" onclick="app.setTab('skill')">🔥 스킬</button>
+            <button class="tab-btn" onclick="app.setTab('commander')">👑 지휘관</button>
+        </div>
+        <div style="padding:10px; border-bottom:1px solid var(--border);">
+            <input type="text" id="search-input" placeholder="이름 검색..." oninput="app.renderList()">
+        </div>
+        <div class="item-list" id="item-list"></div>
+        <div style="padding:10px; border-top:1px solid var(--border);">
+            <button class="primary" style="width:100%" onclick="app.createNew()">+ 새 데이터 만들기</button>
+        </div>
+    </div>
+
+    <div class="col-edit" id="edit-panel">
+        <div style="text-align:center; color:#555; margin-top:100px;">
+            <h2>편집할 항목을 선택하세요</h2>
+            <p>또는 우측 하단에서 [불러오기]를 실행하세요.</p>
+        </div>
+    </div>
+
+    <div class="col-preview">
+        <h3>👁️ 미리보기</h3>
+        <div class="preview-area">
+            <div class="preview-overlay"></div>
+            <div id="card-preview" class="card-preview-wrapper" style="display:none;"></div>
+            <div id="cmd-preview" style="display:none; text-align:center; z-index:10; color:white;">
+                <div style="width:120px; height:120px; background:#333; border:2px solid gold; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:40px;" id="cmd-img-box"></div>
+                <h2 id="cmd-name-prev" style="margin-top:10px;">Name</h2>
+                <p id="cmd-desc-prev" style="font-size:12px; color:#ccc; white-space:pre-wrap;">Description</p>
+            </div>
+        </div>
+
+        <h3>💾 데이터 입출력 (data.js)</h3>
+        <div class="code-area">
+            <textarea id="io-textarea" class="code-output" placeholder="js/data.js 전체 내용을 여기에 붙여넣으세요."></textarea>
+            <div style="display:flex; gap:10px;">
+                <button onclick="app.importData()" style="flex:1;">📂 불러오기</button>
+                <button onclick="app.exportData()" class="primary" style="flex:1;">📋 전체 코드 생성</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // [기본 템플릿 데이터] - 불러오기 전 초기값
+        const DEFAULT_DATA = {
+            UNIT_STATS: {},
+            SKILL_STATS: {},
+            COMMANDERS: {}
+        };
+
+        // [SVG 데이터] - 이미지 없을 때 SVG로 대체 표시용
+        const SVG_DATA = {
+            'body_infantry': `<svg viewBox="0 0 64 64"><ellipse cx="32" cy="58" rx="16" ry="4" fill="#000" opacity="0.3"/><path d="M22 25 Q32 55 42 25" fill="#ccc" stroke="#000" stroke-width="2"/><rect x="22" y="22" width="20" height="26" rx="4" fill="#FFFFFF" stroke="#000" stroke-width="2"/><rect x="22" y="38" width="20" height="4" fill="#333"/><circle cx="32" cy="18" r="10" fill="#FFFFFF" stroke="#000" stroke-width="2"/><path d="M24 18 L40 18" stroke="#000" stroke-width="2"/></svg>`,
+            'weapon_sword': `<svg viewBox="0 0 32 64"><g transform="translate(16, 45)"><path d="M-3 -35 L3 -35 L5 0 L-5 0 Z" fill="#FFFFFF" stroke="#000" stroke-width="2"/><rect x="-8" y="0" width="16" height="4" fill="#D4AF37" stroke="#000" stroke-width="1.5"/><rect x="-2" y="4" width="4" height="10" fill="#654321"/></g></svg>`,
+            'weapon_bow': `<svg viewBox="0 0 32 64"><g transform="translate(10, 32)"><path d="M0 -25 Q 30 0 0 25" fill="none" stroke="#8B4513" stroke-width="4"/><line x1="0" y1="-25" x2="0" y2="25" stroke="#eee" stroke-width="1"/></g></svg>`
+        };
+
+        class DashboardApp {
+            constructor() {
+                this.data = JSON.parse(JSON.stringify(DEFAULT_DATA));
+                this.currentTab = 'unit';
+                this.selectedId = null;
+                
+                // SVG URL 생성
+                this.svgUrls = {};
+                for (const [k, v] of Object.entries(SVG_DATA)) {
+                    const blob = new Blob([v], { type: 'image/svg+xml;charset=utf-8' });
+                    this.svgUrls[k] = URL.createObjectURL(blob);
+                }
+            }
+
+            // =========================================================================
+            // 📂 [핵심] 불러오기 (Import) - 오류 수정됨
+            // =========================================================================
+            importData() {
+                const code = document.getElementById('io-textarea').value;
+                if (!code.trim()) return alert("코드를 붙여넣어주세요.");
+                
+                try {
+                    // ★ 핵심 수정: const 재선언 오류를 피하기 위해
+                    // 변수 선언 없이 사용자의 코드를 그대로 실행하고, 마지막에 객체만 리턴받습니다.
+                    // 사용자가 'const UNIT_STATS = ...'라고 쓴 코드가 그대로 실행되므로
+                    // 이 함수 스코프 내에서 해당 변수가 생성됩니다.
+                    const runner = new Function(`
+                        ${code}
+                        return {
+                            UNIT_STATS: (typeof UNIT_STATS !== 'undefined') ? UNIT_STATS : {},
+                            SKILL_STATS: (typeof SKILL_STATS !== 'undefined') ? SKILL_STATS : {},
+                            COMMANDERS: (typeof COMMANDERS !== 'undefined') ? COMMANDERS : {}
+                        };
+                    `);
+                    
+                    const extracted = runner();
+                    
+                    if (Object.keys(extracted.UNIT_STATS).length > 0) this.data.UNIT_STATS = extracted.UNIT_STATS;
+                    if (Object.keys(extracted.SKILL_STATS).length > 0) this.data.SKILL_STATS = extracted.SKILL_STATS;
+                    if (Object.keys(extracted.COMMANDERS).length > 0) this.data.COMMANDERS = extracted.COMMANDERS;
+
+                    alert("데이터 로드 성공! 리스트가 갱신되었습니다.");
+                    this.renderList();
+                } catch (e) {
+                    console.error(e);
+                    alert("코드 파싱 실패!\n오류 내용: " + e.message + "\n\njs/data.js 전체 내용을 정확히 복사했는지 확인해주세요.");
+                }
+            }
+
+            // =========================================================================
+            // 📋 [핵심] 내보내기 (Export) - 원본 파일 구조 유지
+            // =========================================================================
+            exportData() {
+                const now = new Date().toISOString().split('T')[0];
+                
+                // 원본 파일의 구조를 유지하기 위해 정적 데이터와 동적 데이터를 합칩니다.
+                let output = `// js/data.js (Edited via Dashboard ${now})\n\n`;
+                
+                // 1. 배치 제한 등 상수
+                output += `const DEPLOY_LIMIT = 266;\n\n`;
+
+                // 2. 유닛 데이터 (UNIT_STATS)
+                output += `// ============================================================\n`;
+                output += `// ⚔️ 유닛 데이터 (Unit Stats)\n`;
+                output += `// ============================================================\n`;
+                output += `const UNIT_STATS = ${this.formatJSON(this.data.UNIT_STATS)};\n\n`;
+
+                // 3. CC 규칙 (변경사항 없으면 하드코딩된 값 사용)
+                output += `// ★ CC기 규칙 정의\n`;
+                output += `const CC_RULES = {
+    'STUN':      { canMove: false, canAttack: false, cancelCast: true,  msg: "😵 STUN" },
+    'KNOCKBACK': { canMove: false, canAttack: false, cancelCast: true,  msg: "🔙 PUSH" },
+    'SILENCE':   { canMove: true,  canAttack: true,  cancelCast: true,  msg: "😶 SILENCE" },
+    'ROOT':      { canMove: false, canAttack: true,  cancelCast: false, msg: "🔒 ROOT" },
+    'SLOW':      { canMove: true,  canAttack: true,  cancelCast: false, msg: "🐌 SLOW" }
+};\n\n`;
+
+                // 4. 지휘관 데이터 (COMMANDERS)
+                output += `// ============================================================\n`;
+                output += `// 👑 지휘관 데이터\n`;
+                output += `// ============================================================\n`;
+                output += `const COMMANDERS = ${this.formatJSON(this.data.COMMANDERS)};\n\n`;
+                output += `let selectedCommander = 'artillery';\n\n`;
+
+                // 5. 스킬 데이터 (SKILL_STATS)
+                output += `// ============================================================\n`;
+                output += `// ✨ 스킬 데이터 (Skill Stats)\n`;
+                output += `// ============================================================\n`;
+                output += `const SKILL_STATS = ${this.formatJSON(this.data.SKILL_STATS)};\n\n`;
+
+                // 6. 나머지 정적 데이터 및 함수 (MAP_DATA, getEnemyStats 등)
+                // ★ 사용자 파일의 나머지 부분을 그대로 템플릿화
+                output += `
+const STARTER_DECK = [
+    'Unit-검사', 'Unit-암살자', 'Unit-암살자',
+    'Unit-궁수', 'Unit-궁수',
+    'Unit-방벽', 'Unit-방벽',
+    'Unit-암살자', 'Unit-암살자',
+    'Skill-돌멩이', 'Unit-힐러',
+    'Skill-화염구', 
+    'Skill-방어막'
+];
+
+const MAX_HAND = 7;
+const MAX_COST = 50;
+const RECOVERY_COST = 10;
+
+let currentStage = 1;
+let difficultyLevel = 0; 
+
+const DIFFICULTY_MODS = {
+    0: { hpMult: 1.0, dmgMult: 1.0, costPenalty: 0 }
+};
+
+for (let i = 1; i <= 20; i++) {
+    DIFFICULTY_MODS[i] = {
+        hpMult: 1.0 + (i * 0.1),   
+        dmgMult: 1.0 + (i * 0.1),  
+        costPenalty: Math.floor(i / 5) * -2 
+    };
+}
+
+function getEnemyStats(name) {
+    const base = UNIT_STATS[name];
+    const mod = DIFFICULTY_MODS[difficultyLevel] || DIFFICULTY_MODS[0];
+
+    if (name === '적군' || name === '기지') {
+        return {
+            ...base,
+            hp: Math.floor(base.hp * mod.hpMult),
+            damage: Math.floor(base.damage * mod.dmgMult)
+        };
+    }
+    return base;
+}
+
+const ENEMY_COMMANDERS = {
+    1: { name: '초보 검투사', deck: ['적군'], aiType: 'BASIC', baseCost: 5 },
+    2: { name: '백인대장', deck: ['적군', '궁수', '검사'], aiType: 'BALANCED', baseCost: 10 },
+    3: { name: '암살자 길드장', deck: ['적군', '암살자', '방벽'], aiType: 'TRICKY', baseCost: 12 },
+    5: { name: '화염의 마법사', deck: ['검사', '방벽', '화염구'], aiType: 'TACTICAL_AOE', baseCost: 12 }
+};
+
+const DEFAULT_ENEMY_COMMANDER = { 
+    name: '무명 지휘관', deck: ['적군'], aiType: 'BASIC', baseCost: 15 
+};
+
+const MAP_DATA = {
+    'DefaultMap': { 
+        tileSize: 40, mapWidth: 25, mapHeight: 15, image: 'bg_battle',
+        getGrid: function(w, h) { return Array(h).fill().map(() => Array(w).fill(0)); }
+    },
+    'Map1': { 
+        tileSize: 40, mapWidth: 25, mapHeight: 15, image: 'bg_battle',
+        getGrid: function(w, h) { 
+            let grid = Array(h).fill().map(() => Array(w).fill(0));
+            for(let y=0; y<h; y++) {
+                grid[y][10] = 1; 
+                if (y===4 || y===10) grid[y][10] = 0; 
+            }
+            for(let y=0; y<h; y++) {
+                for(let x=0; x<5; x++) grid[y][x] = 2;
+            }
+            return grid;
+        }
+    }
+};
+
+function getMapData(id) {
+    return MAP_DATA[id] || MAP_DATA['DefaultMap'];
+}
+
+// Global Registration
+window.DEPLOY_LIMIT = DEPLOY_LIMIT;
+window.UNIT_STATS = UNIT_STATS;
+window.CC_RULES = CC_RULES;
+window.COMMANDERS = COMMANDERS;
+window.SKILL_STATS = SKILL_STATS;
+window.STARTER_DECK = STARTER_DECK;
+window.MAX_HAND = MAX_HAND;
+window.MAX_COST = MAX_COST;
+window.RECOVERY_COST = RECOVERY_COST;
+window.ENEMY_COMMANDERS = ENEMY_COMMANDERS;
+window.DEFAULT_ENEMY_COMMANDER = DEFAULT_ENEMY_COMMANDER;
+window.getEnemyStats = getEnemyStats;
+window.getMapData = getMapData;
+`;
+
+                const textarea = document.getElementById('io-textarea');
+                textarea.value = output;
+                textarea.select();
+                document.execCommand('copy');
+                alert("전체 코드가 복사되었습니다! js/data.js 파일에 덮어씌우세요.");
+            }
+
+            formatJSON(obj) {
+                // 보기 좋게 포맷팅 (키의 따옴표 제거)
+                const json = JSON.stringify(obj, null, 4);
+                return json.replace(/"([^"]+)":/g, '$1:');
+            }
+
+            // =========================================================================
+            // UI 로직 (탭, 리스트, 폼)
+            // =========================================================================
+            setTab(tab) {
+                this.currentTab = tab;
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                event.target.classList.add('active');
+                this.selectedId = null;
+                this.renderList();
+                document.getElementById('edit-panel').innerHTML = '<div style="text-align:center; margin-top:100px; color:#555;">편집할 항목을 선택하세요</div>';
+                document.getElementById('card-preview').style.display = 'none';
+                document.getElementById('cmd-preview').style.display = 'none';
+            }
+
+            getDataGroup() {
+                if (this.currentTab === 'unit') return this.data.UNIT_STATS;
+                if (this.currentTab === 'skill') return this.data.SKILL_STATS;
+                return this.data.COMMANDERS;
+            }
+
+            renderList() {
+                const listEl = document.getElementById('item-list');
+                const search = document.getElementById('search-input').value.toLowerCase();
+                const group = this.getDataGroup();
+                
+                listEl.innerHTML = '';
+                
+                Object.keys(group).forEach(key => {
+                    if (key.toLowerCase().includes(search)) {
+                        const item = group[key];
+                        const div = document.createElement('div');
+                        div.className = `list-item ${this.selectedId === key ? 'active' : ''}`;
+                        div.innerHTML = `
+                            <div>
+                                <div style="font-weight:bold; color:#fff;">${key}</div>
+                                <div class="item-sub">${item.name || key} | Cost: ${item.cost !== undefined ? item.cost : '-'}</div>
+                            </div>
+                            <div style="font-size:18px;">${this.getItemIcon(item)}</div>
+                        `;
+                        div.onclick = () => this.selectItem(key);
+                        listEl.appendChild(div);
+                    }
+                });
+            }
+
+            getItemIcon(item) {
+                if (this.currentTab === 'unit') return '⚔️';
+                if (this.currentTab === 'skill') return '🔥';
+                return '👑';
+            }
+
+            createNew() {
+                const id = prompt("새 ID를 입력하세요 (영문 권장):");
+                if (!id) return;
+                
+                const group = this.getDataGroup();
+                if (group[id]) return alert("이미 존재하는 ID입니다.");
+
+                // 기본 템플릿 복제
+                let template = {};
+                if (this.currentTab === 'unit') {
+                    // 검사가 있으면 복사, 없으면 기본값
+                    template = this.data.UNIT_STATS['검사'] ? JSON.parse(JSON.stringify(this.data.UNIT_STATS['검사'])) : { cost: 3, hp: 100, damage: 10, range: 50, speed: 50 };
+                } else if (this.currentTab === 'skill') {
+                    template = this.data.SKILL_STATS['화염구'] ? JSON.parse(JSON.stringify(this.data.SKILL_STATS['화염구'])) : { cost: 3, damage: 30, radius: 50 };
+                } else {
+                    template = this.data.COMMANDERS['knight'] ? JSON.parse(JSON.stringify(this.data.COMMANDERS['knight'])) : { name: '새 지휘관', hp: 1000 };
+                }
+                
+                template.name = "New " + id;
+                group[id] = template;
+                this.selectItem(id);
+                this.renderList();
+            }
+
+            selectItem(id) {
+                this.selectedId = id;
+                this.renderList();
+                this.renderForm(id);
+                this.updatePreview();
+            }
+
+            // === [폼 생성기] ===
+            renderForm(id) {
+                const group = this.getDataGroup();
+                const item = group[id];
+                const panel = document.getElementById('edit-panel');
+                
+                let html = `
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <h2>${id} <span style="font-size:14px; color:#777;">(${this.currentTab})</span></h2>
+                        <button class="danger" onclick="app.deleteItem('${id}')">삭제</button>
+                    </div>
+                    <div class="form-grid">
+                `;
+
+                // 필드 자동 생성 (traits, desc, bonus 관련 필드는 제외하고 자동 생성)
+                const skipKeys = ['traits', 'desc', 'bonusTime', 'bonusEffect'];
+                Object.keys(item).forEach(key => {
+                    if (skipKeys.includes(key)) return;
+
+                    const val = item[key];
+                    const type = typeof val;
+                    
+                    if (type === 'number' || type === 'string') {
+                        html += `
+                            <div class="form-group">
+                                <label>${key.toUpperCase()}</label>
+                                <input type="${type === 'number' ? 'number' : 'text'}" 
+                                    value="${val}" 
+                                    step="${key.includes('Speed') || key.includes('time') || key.includes('duration') ? '0.1' : '1'}"
+                                    onchange="app.updateField('${key}', this.value, '${type}')">
+                            </div>
+                        `;
+                    }
+                });
+                html += `</div>`; // Grid End
+
+                // 설명 (TextArea)
+                html += `
+                    <div class="form-group">
+                        <label>DESCRIPTION (설명)</label>
+                        <textarea rows="3" onchange="app.updateField('desc', this.value)">${item.desc || ''}</textarea>
+                    </div>
+                `;
+
+                // 전략 보너스 (UNIT/SKILL)
+                if (this.currentTab !== 'commander') {
+                    // JSON 편집기 형태로 간단히 제공
+                    html += `
+                        <div class="form-group" style="background:#222; padding:10px; border-radius:4px;">
+                            <label style="color:#ffcc00;">★ 전략 보너스 (시간/효과)</label>
+                            <div class="form-grid">
+                                <div>
+                                    <label>Bonus Time [시작, 끝]</label>
+                                    <input type="text" value="${JSON.stringify(item.bonusTime || [])}" 
+                                    onchange="app.updateJsonField('bonusTime', this.value)">
+                                </div>
+                                <div>
+                                    <label>Bonus Effect {stat, val}</label>
+                                    <input type="text" value='${JSON.stringify(item.bonusEffect || {})}' 
+                                    onchange="app.updateJsonField('bonusEffect', this.value)">
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // 특성 (Tag Input) - 유닛인 경우만
+                if (this.currentTab === 'unit') {
+                    html += `
+                        <div class="form-group">
+                            <label>TRAITS (특성 - 엔터로 추가)</label>
+                            <div class="tags-container" onclick="document.getElementById('trait-input').focus()">
+                                ${ (item.traits || []).map((t, idx) => `
+                                    <span class="tag ${t==='보병'?'tag-race':''}">${t} <span class="tag-remove" onclick="app.removeTrait(${idx})">×</span></span>
+                                `).join('') }
+                                <input type="text" id="trait-input" class="tag-input" placeholder="+Tag" onkeydown="app.addTrait(event)">
+                            </div>
+                            <div style="margin-top:5px; display:flex; gap:5px;">
+                                <button onclick="app.addTraitDirect('보병')" style="font-size:10px;">+보병</button>
+                                <button onclick="app.addTraitDirect('침투')" style="font-size:10px;">+침투</button>
+                                <button onclick="app.addTraitDirect('은신')" style="font-size:10px;">+은신</button>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                panel.innerHTML = html;
+            }
+
+            updateField(key, value, type) {
+                const group = this.getDataGroup();
+                if (type === 'number') value = parseFloat(value);
+                group[this.selectedId][key] = value;
+                this.updatePreview();
+                this.renderList(); 
+            }
+
+            updateJsonField(key, valueStr) {
+                try {
+                    const parsed = JSON.parse(valueStr);
+                    const group = this.getDataGroup();
+                    group[this.selectedId][key] = parsed;
+                    // 성공 시 별도 알림 없음
+                } catch (e) {
+                    alert("JSON 형식이 올바르지 않습니다. (예: [0, 5] 또는 {\"stat\":\"hp\", \"val\":10})");
+                }
+            }
+
+            deleteItem(id) {
+                if (!confirm(`정말 '${id}' 데이터를 삭제하시겠습니까?`)) return;
+                const group = this.getDataGroup();
+                delete group[id];
+                this.selectedId = null;
+                this.renderList();
+                document.getElementById('edit-panel').innerHTML = '';
+                document.getElementById('card-preview').style.display = 'none';
+            }
+
+            // === [특성 관리] ===
+            removeTrait(idx) {
+                const item = this.data.UNIT_STATS[this.selectedId];
+                item.traits.splice(idx, 1);
+                this.renderForm(this.selectedId);
+                this.updatePreview();
+            }
+
+            addTrait(e) {
+                if (e.key === 'Enter') {
+                    const val = e.target.value.trim();
+                    if (val) this.addTraitDirect(val);
+                }
+            }
+
+            addTraitDirect(val) {
+                const item = this.data.UNIT_STATS[this.selectedId];
+                if (!item.traits) item.traits = [];
+                if (!item.traits.includes(val)) {
+                    item.traits.push(val);
+                    this.renderForm(this.selectedId);
+                    this.updatePreview();
+                }
+            }
+
+            // === [미리보기] ===
+            updatePreview() {
+                const cardEl = document.getElementById('card-preview');
+                const cmdEl = document.getElementById('cmd-preview');
+                const group = this.getDataGroup();
+                const item = group[this.selectedId];
+
+                if (this.currentTab === 'commander') {
+                    cardEl.style.display = 'none';
+                    cmdEl.style.display = 'block';
+                    
+                    document.getElementById('cmd-name-prev').innerText = item.name;
+                    document.getElementById('cmd-desc-prev').innerText = item.desc;
+                    const color = item.color ? '#' + item.color.toString(16).padStart(6, '0') : '#aaa';
+                    document.getElementById('cmd-img-box').style.background = color;
+                    document.getElementById('cmd-img-box').innerText = item.name ? item.name[0] : 'C';
+                } else {
+                    cmdEl.style.display = 'none';
+                    cardEl.style.display = 'block';
+                    
+                    const frameClass = (this.currentTab === 'unit') ? 'frame-unit' : 'frame-skill';
+                    
+                    // 이미지 (SVG 조합)
+                    let imgHtml = '';
+                    if (this.currentTab === 'unit') {
+                        let body = 'body_infantry';
+                        let weapon = null;
+                        
+                        // 이름이나 이미지 키를 보고 파츠 추측
+                        const imgKey = item.image || '';
+                        if (imgKey.includes('archer')) weapon = 'weapon_bow';
+                        else if (imgKey.includes('healer') || imgKey.includes('mage')) { body = 'body_robe'; weapon = 'weapon_staff'; }
+                        else if (imgKey.includes('sword')) weapon = 'weapon_sword';
+                        
+                        // SVG 합성
+                        const s1 = this.svgUrls[body] ? `<img src="${this.svgUrls[body]}" style="position:absolute; width:100%; height:100%;">` : '';
+                        const s2 = (weapon && this.svgUrls[weapon]) ? `<img src="${this.svgUrls[weapon]}" style="position:absolute; width:50%; height:100%; left:30%; top:10%;">` : '';
+                        imgHtml = `<div style="position:relative; width:100%; height:100%;">${s1}${s2}</div>`;
+                    } else {
+                        imgHtml = '<div style="font-size:50px; display:flex; justify-content:center; align-items:center; height:100%;">🔥</div>';
+                    }
+
+                    // 스탯 HTML
+                    let statsHtml = '';
+                    if (this.currentTab === 'unit') {
+                        statsHtml = `
+                            <div class="stat-badge stat-atk">${item.damage}</div>
+                            <div class="stat-badge stat-hp">${item.hp}</div>
+                        `;
+                    }
+                    
+                    // 특성 HTML
+                    let traitsHtml = '';
+                    if (item.race) traitsHtml += `<span class="trait-tag tag-race">${item.race}</span>`;
+                    if (item.traits) item.traits.forEach(t => traitsHtml += `<span class="trait-tag">${t}</span>`);
+
+                    cardEl.innerHTML = `
+                        <div class="card">
+                            <div class="card-bg-img" style="background:#222; overflow:hidden;">${imgHtml}</div>
+                            <div class="card-frame ${frameClass}"></div>
+                            <div class="card-cost">${item.cost !== undefined ? item.cost : '-'}</div>
+                            <div class="card-name">${item.name}</div>
+                            <div class="card-traits">${traitsHtml}</div>
+                            <div class="card-type">${this.currentTab.toUpperCase()}</div>
+                            ${statsHtml}
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        const app = new DashboardApp();
+    </script>
+</body>
+</html>

@@ -75,12 +75,57 @@ class ArtifactManager {
         return GAME_DATA.artifacts;
     }
 
+// js/managers/ArtifactManager.js 내부
+
     addArtifact(key) {
-        // GAME_DATA에 추가
+        // [1] 중복 체크
+        if (this.hasArtifact(key)) {
+            const refundGold = 100;
+            GAME_DATA.addGold(refundGold);
+            
+            this.scene.addLog(`중복 유물 반환: ${ARTIFACT_DATA[key].name} -> ${refundGold}G`, "log-gold");
+            
+            if (this.scene.showFloatingText) {
+                this.scene.showFloatingText(
+                    this.scene.scale.width/2, 
+                    this.scene.scale.height/2, 
+                    `이미 보유 중!\n골드 +${refundGold}`, 
+                    '#ffd700'
+                );
+            }
+            if (this.scene.updateUI) this.scene.updateUI();
+
+            // ★ [수정] 중복이었음을 알려주는 반환값
+            return { success: false, reason: 'DUPLICATE', refund: refundGold }; 
+        }
+
+        // [2] 정상 획득
         GAME_DATA.addArtifact(key);
-        
         this.scene.addLog(`유물 획득: ${ARTIFACT_DATA[key].name}`, "log-green");
+        
+        // 사운드 등...
         this.updateUI();
+
+        // ★ [수정] 성공했음을 알려주는 반환값
+        return { success: true, item: ARTIFACT_DATA[key].name };
+    }
+
+    // 미보유 유물 중에서 랜덤으로 1개 키(key) 반환
+    getRandomArtifactKey() {
+        // 전체 유물 목록
+        const allKeys = Object.keys(ARTIFACT_DATA);
+        
+        // 현재 내가 가진 유물 목록 (Getter 활용)
+        const owned = this.inventory;
+
+        // [필터링] 전체 - 보유 = 획득 가능 목록
+        const available = allKeys.filter(key => !owned.includes(key));
+
+        // 획득 가능한 게 없으면 (모든 유물 수집 완료) null 반환
+        if (available.length === 0) return null;
+
+        // 랜덤 선택
+        return available[Math.floor(Math.random() * available.length)];
     }
 
     // 유물 제거 (에디터용)
@@ -186,7 +231,36 @@ triggerExplosion(unit) {
             }
         }
     }
+    // js/managers/ArtifactManager.js 클래스 내부
 
+    /**
+     * 보유하지 않은 유물 중 하나를 무작위로 반환합니다.
+     * @param {string|null} targetRarity - 특정 등급만 뽑고 싶을 때 (예: 'LEGENDARY'). 없으면 전체.
+     * @returns {string|null} 유물 키(key) 또는 null (뽑을 게 없을 때)
+     */
+    getNewArtifactKey(targetRarity = null) {
+        // 1. 전체 유물 목록
+        const allKeys = Object.keys(ARTIFACT_DATA);
+        
+        // 2. 이미 가진 유물 목록
+        // (ArtifactManager의 getter나 GAME_DATA 직접 참조)
+        const owned = GAME_DATA.artifacts || [];
+
+        // 3. ★ [핵심] 필터링: (전체 - 보유) = 획득 가능 목록
+        let candidates = allKeys.filter(key => !owned.includes(key));
+
+        // 4. 등급 필터링 (필요 시)
+        if (targetRarity) {
+            candidates = candidates.filter(key => ARTIFACT_DATA[key].rarity === targetRarity);
+        }
+
+        // 5. 뽑을 유물이 하나도 없으면 (올클리어) null 반환
+        if (candidates.length === 0) return null;
+
+        // 6. 랜덤 선택
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        return pick;
+    }
     // ====================================================
     // ★ UI 및 에디터
     // ====================================================

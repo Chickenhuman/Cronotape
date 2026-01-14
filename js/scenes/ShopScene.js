@@ -82,24 +82,24 @@ renderShopUI() {
     }
 
     // ★ [신규] 클래스 메서드로 분리하여 정의 (기존 window.leaveShopConfirm 대체)
-    confirmLeaveShop(container) {
-        this.showCustomPopup(
-            "상점 떠나기", 
-            "정말로 상점을 떠나시겠습니까?\n지금 나가면 다시 입장할 수 없습니다.",
-            () => {
-                // [확인] 버튼 클릭 시 동작
-                container.style.display = 'none'; 
-                
-                // 맵 씬에게 "방문 완료" 알림
-                if (typeof GAME_DATA !== 'undefined') {
-                    GAME_DATA.isShopVisited = true;
-                }
-                
-                this.scene.start('MapScene'); 
-            },
-            true // 취소 버튼 활성화
-        );
-    }
+confirmLeaveShop(container) {
+    this.showCustomPopup(
+        "상점 떠나기", 
+        "정말로 상점을 떠나시겠습니까?\n지금 나가면 다시 입장할 수 없습니다.",
+        () => {
+            // [확인] 버튼 클릭 시 동작
+            container.style.display = 'none'; 
+            
+// [수정 후] ★ 이 코드가 들어가야 노드가 '빈 곳(EMPTY)'으로 변해 재입장이 막힙니다!
+            if (typeof GAME_DATA !== 'undefined') {
+                GAME_DATA.completeCurrentNode(); 
+            }
+            
+            this.scene.start('MapScene'); 
+        },
+        true 
+    );
+}
     createItemElement(item) {
         const div = document.createElement('div');
         div.className = `shop-item ${item.sold ? 'sold-out' : ''}`;

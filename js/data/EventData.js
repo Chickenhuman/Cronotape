@@ -19,14 +19,18 @@ const GAME_EVENTS = [
                 }
             },
             {
-                text: "[담는다] '성수' 유물 획득 (빈 병 필요)",
-                // [조건] 특정 유물이 있어야 선택 가능
-                req: (data) => data.artifacts && data.artifacts.includes('empty_bottle'),
-                effect: (scene, data) => {
-                    data.addArtifact('holy_water'); 
+text: "[담는다] '성수' 유물 획득 (빈 병 필요)",
+            req: (data) => data.artifacts && data.artifacts.includes('empty_bottle'),
+            effect: (scene, data) => {
+                const result = scene.artifactManager.addArtifact('holy_water'); 
+                
+                if (result.success) {
                     return "빈 병에 샘물을 가득 담았습니다.\n(유물 [성수] 획득)";
+                } else {
+                    return `이미 성수를 가지고 있습니다.\n대신 샘물 근처에 떨어진 ${result.refund} 골드를 주웠습니다.`;
                 }
-            },
+            }
+        },
             {
                 text: "[떠난다] 아무것도 하지 않음",
                 req: null,
@@ -45,21 +49,46 @@ const GAME_EVENTS = [
                 req: (data) => data.gold >= 100,
                 effect: (scene, data) => {
                     data.addGold(-100);
-                    // (임시) 랜덤 유물 지급 로직
-                    const randomKey = Math.random() > 0.5 ? 'valve' : 'thorn';
-                    data.addArtifact(randomKey);
-                    return `상인은 돈을 챙기더니 물건을 건네주고 사라졌습니다.\n(골드 -100, 유물 획득)`;
+                    
+                    // ★ [수정] 중복 없는 랜덤 유물 뽑기 적용
+                    // MapScene에 있는 artifactManager를 사용합니다.
+                    const newArtifact = scene.artifactManager.getRandomArtifactKey();
+
+                    if (newArtifact) {
+                        // 획득 가능한 유물이 있으면 추가 (로그 및 UI 갱신 자동 처리)
+                        scene.artifactManager.addArtifact(newArtifact);
+                        return `상인은 돈을 챙기더니 물건을 건네주고 사라졌습니다.\n(골드 -100, 유물 획득)`;
+                    } else {
+                        // [예외] 모든 유물을 다 모았을 경우
+                        // 구매 비용(100G) 환불 + 보너스(100G) = 200G 지급
+                        data.addGold(200);
+                        return `상인이 "당신은 이미 모든 걸 가졌군!"이라며 돈을 더 얹어 돌려줍니다.\n(모든 유물 수집 완료! 골드 +100 획득)`;
+                    }
                 }
             },
-            {
-                text: "[강탈] 강제로 뺏는다 (체력 -20)",
-                req: null,
-                effect: (scene, data) => {
-                    data.currentHp -= 20;
-                    data.addArtifact('recycler');
-                    return "격렬한 몸싸움 끝에 물건을 뺏었지만 상처를 입었습니다.\n(체력 -20, [고철 회수기] 획득)";
+{
+            text: "[강탈] 강제로 뺏는다 (체력 -20)",
+            req: null,
+            effect: (scene, data) => {
+                data.currentHp -= 20;
+                
+                // ★ [수정] 결과를 변수에 저장
+                const result = scene.artifactManager.addArtifact('recycler');
+                
+                let msg = "격렬한 몸싸움 끝에 물건을 뺏었지만 상처를 입었습니다.\n(체력 -20)";
+
+                // 결과에 따라 텍스트 추가
+                if (result.success) {
+                    // 정상 획득
+                    msg += `\n(유물 [고철 회수기] 획득)`;
+                } else {
+                    // 중복 (골드 환급)
+                    msg += `\n(이미 [고철 회수기]를 보유 중이라 ${result.refund} 골드를 챙겼습니다)`;
                 }
-            },
+                
+                return msg;
+            }
+        },
             {
                 text: "[거절] 필요 없다",
                 req: null,

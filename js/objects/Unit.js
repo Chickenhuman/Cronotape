@@ -1,16 +1,25 @@
 // js/objects/Unit.js
 
 class Unit extends Phaser.GameObjects.Container {
-    constructor(scene, x, y, name, team) {
+    // [수정] 6번째 매개변수로 customStats 추가 (기본값 null)
+    constructor(scene, x, y, name, team, customStats = null) {
         super(scene, x, y);
         
         this.scene = scene;
         this.name = name;
         this.team = team;
-        
-        const baseStats = (team === 'ENEMY') ? getEnemyStats(name) : UNIT_STATS[name];
-        this.stats = JSON.parse(JSON.stringify(baseStats));
-        
+
+        // 이제 customStats가 매개변수로 전달되므로 에러가 발생하지 않고,
+        // 보너스 타임 효과가 적용된 스탯을 정상적으로 사용할 수 있습니다.
+        if (customStats) {
+            // 이미 계산된 스탯이므로 복사해서 사용 (참조 끊기)
+            this.stats = JSON.parse(JSON.stringify(customStats));
+        } else {
+            // 기존 로직: customStats가 없으면 기본 데이터 로드
+            const baseStats = (team === 'ENEMY') ? getEnemyStats(name) : UNIT_STATS[name];
+            this.stats = JSON.parse(JSON.stringify(baseStats));
+        }
+
         this.currentHp = this.stats.hp;
         this.active = true;
         this.isBase = (name === '기지');
@@ -101,7 +110,6 @@ class Unit extends Phaser.GameObjects.Container {
         // 현재 GameLogic 구조상 일단 둘 다 막히는 경우만 처리합니다.
         if (!rules.canMove && !rules.canAttack) return;
 
-        if (this.attackCooldown > 0) this.attackCooldown -= dt;
 
         // 캐스팅 진행
         if (this.isCasting) {

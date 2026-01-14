@@ -3,8 +3,9 @@ class BattleScene extends Phaser.Scene {
         super({ key: 'BattleScene' });
     }
 
-    preload() {
-        // [1] 유닛 아이콘
+preload() {
+        // [1] 유닛 아이콘 (기존 방식 유지)
+        // (아이콘도 소프트코딩 가능하지만, 일단 안전하게 기존 리소스 로드 유지)
         this.load.image('img_swordman', 'assets/icon/swordman.png');
         this.load.image('img_archer', 'assets/icon/archer.png');
         this.load.image('img_healer', 'assets/icon/healer.png');
@@ -12,14 +13,30 @@ class BattleScene extends Phaser.Scene {
         this.load.image('img_assassin', 'assets/icon/assassin.png');
         this.load.image('img_enemy', 'assets/icon/enemy.png');
 
-        // [2] 배경 및 기타
+        // [2] 배경 및 기타 리소스
         this.load.image('bg_battle', 'assets/maps/battle_bg1.png');
         this.load.image('cmd_knight', 'assets/commanders/knight.png');
         this.load.image('base_knight', 'assets/base/base_knight.png');
         
+        // ★ [소프트 코딩] 데이터(UNIT_STATS, SKILL_STATS)를 순회하며 일러스트 자동 로드
+        // 조건: data.js의 image 속성이 'img_이름' 형태여야 하며, 
+        //       assets/chars/ 폴더에 '이름.png' 파일이 있어야 함.
+        
+        const allStats = { ...UNIT_STATS, ...SKILL_STATS };
+
+        for (const [name, stat] of Object.entries(allStats)) {
+            if (stat.image) {
+                // 예: 'img_swordman' -> 'swordman' (파일명 추출)
+                const fileName = stat.image.replace('img_', '');
+                
+                // 로드 키: 'illust_swordman', 경로: 'assets/chars/swordman.png'
+                this.load.image(`illust_${fileName}`, `assets/chars/${fileName}.png`);
+            }
+        }
+    }
         // (나중에 추가될 리소스 예시)
         // this.load.image('base_mage', 'assets/base/base_mage.png');
-    }
+    
 
 create() {
         // ★ [UI 복구] 배틀 씬 진입 시 전투 UI 보이기
@@ -59,8 +76,7 @@ create() {
         this.fieldGraphics = this.add.graphics();
         this.fieldGraphics.setDepth(10); 
         this.fieldGraphics.setVisible(false); 
-        
-        this.createTopInfoUI();
+    
         
         // [에디터 초기화]
         this.isEditorMode = false;
@@ -183,7 +199,8 @@ this.simEasystar.setIterationsPerCalculation(1000000000);
         this.artifactManager = new ArtifactManager(this);
         this.artifactManager.init(); 
         this.toggleBattleUI(false);
-        
+        this.createTimelineUI();
+
         // 에디터 모드 버튼
         const toggleButton = document.createElement('button');
         toggleButton.innerText = '에디터 모드 (OFF)';
@@ -203,38 +220,6 @@ this.simEasystar.setIterationsPerCalculation(1000000000);
         };
     }
 
-createTopInfoUI() {
-        // 배경 바
-        const barBg = this.add.rectangle(this.scale.width / 2, 30, 400, 40, 0x000000, 0.7);
-        barBg.setDepth(100);
-        barBg.setStrokeStyle(2, 0x444444);
-
-        // 현재 거리 & 데드라인 정보 가져오기
-        const dist = GAME_DATA.campaign.currentDistance;
-        const dead = GAME_DATA.campaign.deadline;
-        const gap = dist - dead;
-
-        // 텍스트 객체 생성 (변수명: topPredictText)
-        this.topPredictText = this.add.text(this.scale.width / 2, 30, "전투 분석 중...", {
-            fontSize: '18px',
-            color: '#ffffff',
-            fontStyle: 'bold'
-        }).setOrigin(0.5).setDepth(101);
-
-        // 위급 상황(격차가 10km 이하)이면 빨간색으로 깜빡임 효과
-        if (gap <= 10) {
-            // ★ [수정] this.topDistanceText -> this.topPredictText 로 변경
-            this.topPredictText.setColor('#ff5555'); 
-            this.tweens.add({
-                targets: this.topPredictText, // ★ 여기도 변경
-                alpha: 0.5,
-                duration: 800,
-                yoyo: true,
-                repeat: -1
-            });
-        }
-    }
-
 drawDeploymentZones(shouldDraw) {
         if (this.interactionManager) this.interactionManager.drawDeploymentZones(shouldDraw);
     }
@@ -244,46 +229,7 @@ drawDeploymentZones(shouldDraw) {
         if (this.interactionManager) this.interactionManager.cancelDeployment(plan);
     }
 
-    // ★ [핵심] 실시간 예측 업데이트 로직
-    updatePredictionUI() {
-        if (!this.topPredictText) return;
-
-        // 1. 기지 유닛 찾기
-        const myBase = this.activeUnits.find(u => u.isBase && u.team === 'ALLY');
-        const enemyBase = this.activeUnits.find(u => u.isBase && u.team === 'ENEMY');
-
-        if (!myBase || !enemyBase) return;
-
-        // 2. 최대 체력 가져오기
-        const myMax = GAME_DATA.maxHp || 1000;
-        const enemyMax = enemyBase.stats.hp || 1000;
-
-        // 3. 손실율 계산
-        const myLoss = (myMax - myBase.currentHp) / myMax;
-        const enemyLoss = (enemyMax - enemyBase.currentHp) / enemyMax;
-
-        // 4. 예상 거리 계산 (DataManager 공식과 동일하게)
-        // (적 손실 - 내 손실) * 최대거리(10km)
-        const diff = enemyLoss - myLoss;
-        const maxDist = GAME_DATA.campaign.stageMaxDist || 10;
-        
-        let predictDist = Math.floor(diff * maxDist);
-        
-        // 한계값 보정
-        if (predictDist > maxDist) predictDist = maxDist;
-        if (predictDist < -10) predictDist = -10;
-
-        // 5. 텍스트 표시
-        let sign = (predictDist > 0) ? '+' : '';
-        let color = '#ffffff';
-
-        if (predictDist > 0) color = '#00ff00'; // 전진 (녹색)
-        else if (predictDist < 0) color = '#ff5555'; // 후퇴 (적색)
-        else color = '#aaaaaa'; // 제자리 (회색)
-
-        this.topPredictText.setText(`예상 결과: ${sign}${predictDist}km (적 ${Math.floor(enemyLoss*100)}% vs 나 ${Math.floor(myLoss*100)}%)`);
-        this.topPredictText.setColor(color);
-    }
+   
 // BattleScene.js 클래스 내부 (적절한 위치에 추가)
 drawEditorGrid() {
         // 기존 그리드 및 좌표 모두 클리어
@@ -382,9 +328,12 @@ if (this.grid[y] && this.grid[y][x] === 1) {
     }
 
 // [3] 업데이트 루프 (10라운드 체크)
- update(time, delta) {
-        if (!this.isPlaying) return;
-        
+update(time, delta) {
+        if (!this.isPlaying) {
+            // 전투 중이 아닐 때도 UI 갱신 필요 (카드 선택 시 반응해야 하므로)
+            this.updateBonusUI();
+        } else {
+        this.updateGhostSimulation();
         const dt = (delta / 1000) * this.timeSpeed;
         if (this.artifactManager) this.artifactManager.update(dt);
         this.battleTime += dt;
@@ -392,7 +341,6 @@ if (this.grid[y] && this.grid[y][x] === 1) {
         this.easystar.calculate();
         
         this.checkSpawns();
-        this.updatePredictionUI();
 
         // 1. 유닛 업데이트 (이동, 공격, 데미지 처리)
         // 이 과정에서 유닛(기지 포함)의 체력이 0이 되어 active = false가 될 수 있습니다.
@@ -461,6 +409,41 @@ if (this.grid[y] && this.grid[y][x] === 1) {
         
         this.drawCommanderHUD();
     }
+}
+
+updateBonusUI() {
+        const indicator = document.getElementById('timeline-bonus-bar');
+        if (!indicator) return;
+
+        const mgr = this.cardManager;
+        // 카드가 선택되지 않았거나 데이터가 없으면 숨김
+        if (!mgr || mgr.selectedCardIdx === -1 || !mgr.hand[mgr.selectedCardIdx]) {
+            indicator.style.display = 'none';
+            return;
+        }
+
+        const cardStr = mgr.hand[mgr.selectedCardIdx];
+        const [type, name] = cardStr.split('-');
+        const stats = this.getAdjustedStats(type, name);
+
+        if (stats && stats.bonusTime) {
+            const [start, end] = stats.bonusTime; 
+            const maxTime = 10.0; // 전체 라운드 시간
+
+            // ★ [수정] 복잡한 보정 공식을 제거하고 순수 시간 비율(%) 사용
+            // 이렇게 하면 0초는 0%, 10초는 100%에 정확히 매핑되어 양쪽 끝까지 꽉 찹니다.
+            const leftPercent = (start / maxTime) * 100;
+            const widthPercent = ((end - start) / maxTime) * 100;
+
+            indicator.style.left = `${leftPercent}%`;
+            indicator.style.width = `${widthPercent}%`;
+            
+            indicator.style.display = 'block';
+        } else {
+            indicator.style.display = 'none';
+        }
+    }
+
 
     findNearestToPoint(x, y, targetTeam) {
         let nearest = null, minDist = 9999;
@@ -495,10 +478,6 @@ handleMapClick(pointer) {
 
         if (this.cardManager.selectedCardIdx === -1) return;
 
-        if (this.cardManager.hand.length > MAX_HAND) {
-            this.showPopup("🚫 패가 너무 무겁습니다!", "카드가 7장 이하여야 사용이 가능합니다!", null, false);
-            return;
-        }
 const cardStr = this.cardManager.hand[this.cardManager.selectedCardIdx];
         const [type, name] = cardStr.split('-');
         
@@ -553,7 +532,6 @@ const cardStr = this.cardManager.hand[this.cardManager.selectedCardIdx];
         
         const marker = this.add.circle(pointer.x, pointer.y, 15, stat.color);
         marker.setAlpha(0.5);
-        const text = this.add.text(pointer.x-15, pointer.y-35, `${currentTime}s`, {fontSize:'10px', backgroundColor:'#000'});
 
         const plan = {
             type: type, name: name, x: pointer.x, y: pointer.y,
@@ -651,78 +629,190 @@ const cardStr = this.cardManager.hand[this.cardManager.selectedCardIdx];
 
 // BattleScene.js 내부 checkSpawns 함수 교체
 
-    checkSpawns() {
+checkSpawns() {
         // 1. 아군(플레이어) 배치 처리
         this.deployedObjects.forEach(plan => {
             if (!plan.spawned && this.battleTime >= plan.time) {
-            if (plan.type === 'Unit') {
+                // spawned 체크를 먼저 하여 중복 실행 방지
+                plan.spawned = true;
+
+                if (plan.type === 'Unit') {
                     const stats = this.getAdjustedStats('Unit', plan.name); 
                     const spawnCount = stats.count || 1;
                     for (let i = 0; i < spawnCount; i++) {
-                        // ★ [수정] 랜덤 대신 plan에 저장된 offsets 사용
                         const offsetX = (plan.offsets && plan.offsets[i]) ? plan.offsets[i].x : 0;
                         const offsetY = (plan.offsets && plan.offsets[i]) ? plan.offsets[i].y : 0;
                         
-                        this.spawnUnit(plan.x + offsetX, plan.y + offsetY, 'ALLY', plan.name);
+                        // ★ [수정] spawnUnit 대신 spawnUnitWithEffect 사용
+                        // 보너스 타임 효과를 적용하기 위함
+                        if (this.spawnUnitWithEffect) {
+                            this.spawnUnitWithEffect(plan.name, plan.x + offsetX, plan.y + offsetY, plan.time);
+                        } else {
+                            // 안전장치: 함수가 없으면 기존 방식 사용
+                            this.spawnUnit(plan.x + offsetX, plan.y + offsetY, 'ALLY', plan.name);
+                        }
                     }
                 } else {
                     // 플레이어 스킬 -> 적군(ENEMY) 타격
+                    console.log(`[CheckSpawns] 스킬 발동 시도`);
                     this.applySkillEffect(plan, 'ENEMY');
                 }
+                
+                // 시각적 마커 제거
                 if (plan.visualMarker) plan.visualMarker.destroy();
                 if (plan.visualText) plan.visualText.destroy();
-                plan.spawned = true;
             }
         });
 
-        // 2. 적군 웨이브 처리 (★ 수정된 부분)
+        // 2. 적군 웨이브 처리
         this.enemyWave.forEach(plan => {
             if (!plan.spawned && this.battleTime >= plan.time) {
+                plan.spawned = true;
                 
-                // ★ [핵심] 유닛인지 스킬인지 구분!
                 if (plan.type === 'Unit') {
                     const stats = getEnemyStats(plan.name);
                     
-                    // 안전장치: 데이터가 없으면 기본값 처리
                     if (!stats) {
                         console.error(`[Spawns] 유닛 데이터 없음: ${plan.name}`);
-                        plan.spawned = true;
                         return;
                     }
 
-        const spawnCount = stats.count || 1;
+                    const spawnCount = stats.count || 1;
                     for (let i = 0; i < spawnCount; i++) {
-                        // ★ [수정] 적군도 저장된 offsets 사용
                         const offsetX = (plan.offsets && plan.offsets[i]) ? plan.offsets[i].x : 0;
                         const offsetY = (plan.offsets && plan.offsets[i]) ? plan.offsets[i].y : 0;
 
+                        // 적군은 보너스 타임 효과를 받지 않으므로 일반 spawnUnit 사용
+                        // (만약 적군도 효과를 받게 하려면 여기서도 spawnUnitWithEffect 사용 가능)
                         this.spawnUnit(plan.x + offsetX, plan.y + offsetY, 'ENEMY', plan.name);
                     }
                 } else {
-                    // ★ [추가] 적군 스킬 -> 아군(ALLY) 타격
+                    // 적군 스킬 -> 아군(ALLY) 타격
                     this.applySkillEffect(plan, 'ALLY');
                 }
-                
-                plan.spawned = true;
             }
         });
     }
 
-    spawnUnit(x, y, team, name) {
-        const unit = new Unit(this, x, y, name, team);
-        this.activeUnits.push(unit);
-        this.addLog(`${name} 소환됨`);
+spawnUnit(x, y, team, name, customStats = null) {
+        // 1. 스탯 결정 (커스텀 스탯이 있으면 그걸 쓰고, 없으면 기본값 가져오기)
+        const baseStats = (team === 'ALLY') ? this.getAdjustedStats('Unit', name) : getEnemyStats(name);
+        const stats = customStats || baseStats;
+
+        // 2. 유닛 생성 (Unit 클래스 사용)
+        // ★ [핵심 수정] 이 부분이 빠져서 오류가 났던 것입니다.
+        let unit;
+        try {
+            // Unit 클래스로 인스턴스 생성
+            unit = new Unit(this, x, y, name, team, stats);
+        } catch (e) {
+            console.error(`[Spawn Error] Unit 생성 실패: ${name}`, e);
+            return null;
+        }
+
+        // 3. 팀 설정 및 관리 목록 추가
+        unit.team = team;
+        
+        // activeUnits 배열에 추가 (게임 업데이트 루프에서 관리됨)
+        if (this.activeUnits) {
+            this.activeUnits.push(unit);
+        }
+
+        // 4. 초기화 로그 (선택사항)
+        // console.log(`Spawned ${name} for ${team} at (${x},${y})`);
+
         return unit;
     }
-// BattleScene.js 내부 applySkillEffect 함수 교체
-// BattleScene.js 클래스 내부에 추가
+
+    // 카드를 드롭했을 때 호출되는 함수 (예시)
+// js/scenes/BattleScene.js 클래스 내부
+
+ // js/scenes/BattleScene.js
+
+    // ★ [수정] 보너스 효과를 적용하여 유닛 소환 (+ 이펙트 추가)
+    spawnUnitWithEffect(cardName, x, y, time) {
+        // 1. 기본 스탯 가져오기
+        const baseStats = this.getAdjustedStats('Unit', cardName);
+        
+        // 2. 원본 보호를 위해 복사
+        let finalStats = JSON.parse(JSON.stringify(baseStats));
+        let appliedBonus = false;
+
+        // 3. 보너스 타임 체크 및 적용
+        if (baseStats.bonusTime && baseStats.bonusEffect) {
+            const [start, end] = baseStats.bonusTime;
+            
+            // 현재 시간이 보너스 구간 내라면
+            if (time >= start && time <= end) {
+                const effect = baseStats.bonusEffect;
+                
+                // (A) 퍼센트 연산 (%)
+                if (effect.unit === '%') {
+                    finalStats[effect.stat] = Math.floor(finalStats[effect.stat] * (1 + effect.val / 100));
+                } 
+                // (B) 고정값 합산 (+)
+                else {
+                    finalStats[effect.stat] += effect.val;
+                }
+                
+                appliedBonus = true;
+            }
+        }
+
+        // 4. 유닛 소환 (수정된 스탯 전달)
+        const unit = this.spawnUnit(x, y, 'ALLY', cardName, finalStats);
+
+        // ★ [신규] 보너스 적용 시 화려한 이펙트 출력
+        if (appliedBonus && unit) {
+            // (1) 로그 출력
+            const bonusText = this.cardManager.getBonusText(baseStats.bonusEffect);
+            this.addLog(`✨ ${cardName}: 타이밍 보너스! (${bonusText})`, "log-green");
+
+            // (2) 시각 효과: 청록색(Cyan) 파동 (CombatManager의 createExplosion 재활용)
+            // createExplosion(x, y, radius, color)
+            this.combatManager.createExplosion(unit.x, unit.y, 80, 0x00ffcc); 
+
+            // (3) 텍스트 효과: 유닛 머리 위에 "NICE TIMING!" 등 띄우기
+            this.combatManager.showFloatingText(
+                unit.x, 
+                unit.y - 50, // 유닛 머리 위
+                `✨TIMING BONUS!\n${bonusText}`, 
+                '#00ffcc',   // 형광 청록색 텍스트
+                '18px'
+            );
+            
+            // (4) 유닛 등장 애니메이션: 커졌다가 작아지면서 밝게 빛남
+            unit.setAlpha(0.5); // 처음엔 반투명
+            unit.setScale(1.5); // 크게 시작
+            
+            // 흰색으로 번쩍이는 효과 (Tint)
+            if (unit.bodySprite) unit.bodySprite.setTint(0xffffff);
+
+            this.tweens.add({
+                targets: unit,
+                alpha: 1,
+                scaleX: 1,
+                scaleY: 1,
+                duration: 400,
+                ease: 'Back.out', // 튕기는 느낌
+                onComplete: () => {
+                    // 원래 색상으로 복구
+                    if (unit && unit.active) unit.resetTint();
+                }
+            });
+        }
+    }
 
 addLog(msg, colorClass = '') {
         this.uiManager.addLog(msg, colorClass);
     }
    // [수정] 일반화된 스킬 효과 적용 함수 (변수명 불일치 해결)
 applySkillEffect(plan, hostileTeam) {
-        this.combatManager.applySkillEffect(plan, hostileTeam);
+        if (this.combatManager) {
+            this.combatManager.applySkillEffect(plan, hostileTeam);
+        } else {
+            console.error("[BattleScene] CombatManager가 초기화되지 않았습니다.");
+        }
     }
 
     applyDamage(attacker, target, damage) {
@@ -807,52 +897,139 @@ createBase(team) {
     // [2] 게임 종료 및 결과 정산
     // [BattleScene.js] checkGameEnd 함수 수정
 
-    checkGameEnd(reason) {
+checkGameEnd(reason) {
         if (!this.isPlaying) return;
         
         this.isPlaying = false;
         this.uiManager.toggleBattleUI(false); // UI 숨김
 
-        let msg = "";
-        let isWin = false;
-
         if (reason === 'ENEMY_DESTROYED') {
-            msg = "승리! 적 기지를 파괴했습니다.";
-            isWin = true;
+            // [승리] 적 기지 파괴
+            console.log("🏆 승리: 적 기지 파괴");
+            GAME_DATA.completeCurrentNode(); // 노드 클리어 처리
+            this.showRewardPopup("적 기지 파괴!"); 
+            
         } else if (reason === 'ALLY_DESTROYED') {
-            msg = "패배... 아군 기지가 파괴되었습니다.";
-            isWin = false;
+            // [패배] 아군 기지 파괴
+            console.log("💀 패배: 아군 기지 파괴");
+            this.handleGameOver("아군 기지가 파괴되었습니다.");
+
         } else if (reason === 'TIME_OVER') {
-            // 시간 초과 시 판정 (체력 비율)
+            // [시간 초과] 체력 판정
             const myBase = this.activeUnits.find(u => u.isBase && u.team === 'ALLY');
             const enemyBase = this.activeUnits.find(u => u.isBase && u.team === 'ENEMY');
             const myHp = myBase ? myBase.currentHp : 0;
             const enemyHp = enemyBase ? enemyBase.currentHp : 0;
             
             if (myHp >= enemyHp) {
-                msg = "판정승! (남은 체력이 더 많습니다)";
-                isWin = true;
+                // 판정승
+                console.log("🏆 판정승: 체력 우위");
+                GAME_DATA.completeCurrentNode();
+                this.showRewardPopup("제한 시간 종료 (판정승)");
             } else {
-                msg = "판정패... (적 체력이 더 많습니다)";
-                isWin = false;
+                // 판정패
+                console.log("💀 판정패: 체력 열세");
+                this.handleGameOver("제한 시간 종료 (적 체력이 더 많습니다)");
             }
         }
+    }
+   // js/scenes/BattleScene.js
+// js/scenes/BattleScene.js
 
-        // 결과 처리
-        if (isWin) {
-            // 승리 시 보상 지급 (예: 골드 50)
-            GAME_DATA.addGold(50);
-            GAME_DATA.completeCurrentNode();
-            // 팝업 후 맵으로 복귀
-            this.uiManager.showPopup("전투 승리!", `${msg}\n(골드 +50)`, () => {
+    showRewardPopup(winMsg) {
+        // [1] UI 숨기기
+        const uiIds = ['timeline-slider', 'hand-container', 'ui-top-bar', 'ui-bottom-bar', 'btn-turn-end', 'btn-reset'];
+        uiIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+
+        // 1. 보상 데이터 생성
+        const rewards = this.cardManager.generateRewards ? this.cardManager.generateRewards() : [];
+        if (rewards.length === 0) rewards.push('Unit-검사', 'Unit-궁수', 'Skill-화염구');
+
+        // 2. 팝업 컨테이너 (DOM)
+        let popup = document.getElementById('reward-popup');
+        if (popup) popup.remove();
+
+        popup = document.createElement('div');
+        popup.id = 'reward-popup';
+        popup.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.9); z-index: 5000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            font-family: 'Rajdhani', sans-serif;
+        `;
+
+        // 3. 타이틀
+        const titleHTML = `
+            <h1 style="color: #ffd700; font-size: 60px; margin: 0; text-shadow: 0 0 10px #ff8800;">VICTORY!</h1>
+            <p style="color: #fff; font-size: 24px; margin-top: 10px; margin-bottom: 40px; text-align: center;">
+                ${winMsg || "전투 승리!"}<br>
+                <span style="font-size: 18px; color: #aaa;">덱에 추가할 카드를 선택하세요</span>
+            </p>
+        `;
+        
+        const cardContainer = document.createElement('div');
+        cardContainer.style.cssText = `display: flex; gap: 40px; justify-content: center; align-items: center;`;
+
+        // 4. 카드 생성
+        rewards.forEach((cardStr) => {
+            
+            // ★ [핵심] CardDeckManager가 툴팁과 배지까지 포함된 완벽한 카드를 만들어줍니다.
+            const cardNode = this.cardManager.createCardElement(cardStr);
+            
+            // [스타일 보정] 보상 화면용
+            cardNode.classList.remove('card-in-viewer'); 
+            cardNode.style.position = 'relative'; 
+            cardNode.style.transform = 'scale(1.2)'; 
+            cardNode.style.margin = '0';
+            cardNode.style.cursor = 'pointer';
+
+            // [등급별 빛나는 효과]
+            const [type, name] = cardStr.split('-');
+            const stats = (type === 'Unit') ? UNIT_STATS[name] : SKILL_STATS[name];
+            const rarity = stats.rarity || 'COMMON';
+
+            if (rarity === 'RARE') cardNode.style.boxShadow = `0 0 20px rgba(0, 136, 255, 0.6)`;
+            else if (rarity === 'LEGENDARY') cardNode.style.boxShadow = `0 0 20px rgba(255, 170, 0, 0.6)`;
+
+            // [클릭 이벤트] 획득
+            cardNode.onclick = () => {
+                GAME_DATA.addCard(cardStr);
+                GAME_DATA.addGold(50);
+                alert(`[${name}] 획득!\n(골드 +50)`);
+                document.body.removeChild(popup);
                 this.scene.start('MapScene');
-            });
-        } else {
-            // 패배 시 게임 오버 처리
-            this.uiManager.showPopup("전투 패배", msg, () => {
-                this.scene.start('TitleScene'); // 혹은 MapScene으로 돌아가되 페널티 적용
-            });
-        }
+            };
+
+            // [호버 애니메이션]
+            cardNode.onmouseenter = () => { cardNode.style.transform = 'scale(1.3)'; cardNode.style.zIndex = '100'; };
+            cardNode.onmouseleave = () => { cardNode.style.transform = 'scale(1.2)'; cardNode.style.zIndex = ''; };
+
+            cardContainer.appendChild(cardNode);
+        });
+
+        // 5. 건너뛰기 버튼
+        const skipBtn = document.createElement('button');
+        skipBtn.innerText = "건너뛰기 (골드만 획득)";
+        skipBtn.style.cssText = `
+            margin-top: 60px; background: none; border: 1px solid #555; color: #888;
+            padding: 10px 20px; font-size: 16px; cursor: pointer; transition: 0.2s; font-family: 'Rajdhani', sans-serif;
+        `;
+        skipBtn.onmouseenter = () => { skipBtn.style.color = '#fff'; skipBtn.style.borderColor = '#fff'; };
+        skipBtn.onmouseleave = () => { skipBtn.style.color = '#888'; skipBtn.style.borderColor = '#555'; };
+        skipBtn.onclick = () => {
+            GAME_DATA.addGold(50);
+            document.body.removeChild(popup);
+            this.scene.start('MapScene');
+        };
+
+        // DOM 조립
+        popup.innerHTML = titleHTML;
+        popup.appendChild(cardContainer);
+        popup.appendChild(skipBtn);
+        document.body.appendChild(popup);
     }
 
     handleGameOver(reason) {
@@ -884,142 +1061,142 @@ runPreSimulation() {
     // ★ [Strategy] 유닛 배치 위치 결정
 // BattleScene.js 내부 함수 교체
 
-    // [BattleScene.js] updateGhostSimulation 함수 교체
-// js/scenes/BattleScene.js 내부 updateGhostSimulation 함수 수정
-updateGhostSimulation() {
+ // js/scenes/BattleScene.js
+// js/scenes/BattleScene.js
+
+    updateGhostSimulation() {
         const now = Date.now();
-        // 50ms 스로틀링 (너무 자주 실행되는 것 방지)
+        // 50ms 스로틀링 (성능 최적화)
         if (this.lastSimTime && (now - this.lastSimTime < 50)) {
             return; 
         }
         this.lastSimTime = now;
 
-        // 기존 그래픽 초기화
+        // 화면 초기화
         this.ghostGroup.clear(true, true);
         this.predictionGraphics.clear(); 
         
-        // 전투 중일 때는 시뮬레이션 중단
-        if (this.isPlaying) return;
+        // ★ [수정 1] 기존의 'if (this.isPlaying) return;' 제거
+        // 대신 현재 시간에 대한 기준을 분기 처리합니다.
+        
+        let currentTime;
+        if (this.isPlaying) {
+            // 전투 중이면 실제 전투 시간을 기준
+            currentTime = this.battleTime; 
+        } else {
+            // 편집 모드면 슬라이더 시간을 기준
+            const slider = document.getElementById('timeline-slider');
+            if (!slider) return;
+            currentTime = parseFloat(slider.value) / 100;
+        }
 
-        // 슬라이더 값 가져오기
-        const slider = document.getElementById('timeline-slider');
-        if (!slider) return;
-        const currentTime = parseFloat(slider.value) / 100;
+        // ★ [수정 2] 시뮬레이터(경로 예측)는 '전투 중이 아닐 때'만 실행
+        // (전투 중에는 실제 유닛이 움직이므로 예측선이 불필요/혼란 초래)
+        if (!this.isPlaying) {
+            const allyPlansWithTeam = this.deployedObjects.map(p => ({ ...p, team: 'ALLY' }));
+            const enemyPlansWithTeam = this.enemyWave.map(p => ({ ...p, team: 'ENEMY' }));
 
-        // 시뮬레이터 실행을 위한 계획 데이터 준비
-        const allyPlansWithTeam = this.deployedObjects.map(p => ({ ...p, team: 'ALLY' }));
-        const enemyPlansWithTeam = this.enemyWave.map(p => ({ ...p, team: 'ENEMY' }));
-
-        // 시뮬레이터 실행 (현재 필드 유닛 + 미래 계획)
-        const results = this.simulator.run(
-            currentTime, 
-            allyPlansWithTeam, 
-            enemyPlansWithTeam, 
-            this.activeUnits, 
-            { 
-                width: this.scale.width, 
-                height: this.scale.height,
-                grid: this.grid,          
-                tileSize: this.tileSize,  
-                easystar: this.simEasystar  
-            }
-        );
-
-        // 결과 시각화 (유령 및 경로 표시)
-        results.forEach(vUnit => {
-            if (!vUnit.isSpawned) return; 
-            
-            const color = (vUnit.team === 'ALLY') ? 0x00ff00 : 0xff0000;
-
-            // ---------------------------------------------------------------
-            // [수정] 경로 그리기 로직 강화 (과거 + 미래)
-            // ---------------------------------------------------------------
-            this.predictionGraphics.lineStyle(2, color, 0.5); 
-            this.predictionGraphics.beginPath();
-
-            // 1. [과거] 지나온 길 그리기 (pathLogs)
-            let hasHistory = false;
-            if (vUnit.pathLogs && vUnit.pathLogs.length > 0) {
-                this.predictionGraphics.moveTo(vUnit.pathLogs[0].x, vUnit.pathLogs[0].y);
-                for (let i = 1; i < vUnit.pathLogs.length; i++) {
-                    this.predictionGraphics.lineTo(vUnit.pathLogs[i].x, vUnit.pathLogs[i].y);
+            const results = this.simulator.run(
+                currentTime, 
+                allyPlansWithTeam, 
+                enemyPlansWithTeam, 
+                this.activeUnits, 
+                { 
+                    width: this.scale.width, 
+                    height: this.scale.height,
+                    grid: this.grid,          
+                    tileSize: this.tileSize,  
+                    easystar: this.simEasystar  
                 }
-                // 현재 위치까지 연결
-                this.predictionGraphics.lineTo(vUnit.x, vUnit.y);
-                hasHistory = true;
-            }
+            );
 
-            // 2. [미래] 앞으로 갈 길 그리기 (vUnit.path)
-            // GameLogic에서 EasyStar로 계산한 path가 있다면 이어서 그립니다.
-            if (vUnit.path && vUnit.path.length > 0) {
-                // 과거 기록이 없으면 현재 위치에서 시작
-                if (!hasHistory) {
-                    this.predictionGraphics.moveTo(vUnit.x, vUnit.y);
-                } else {
-                    // 과거 기록이 있으면 펜이 이미 vUnit.x, vUnit.y에 있으므로 이어서 그림
-                }
-
-                // path 배열은 그리드 좌표(예: 5, 3)이므로 픽셀 좌표로 변환해야 함
-                vUnit.path.forEach(node => {
-                    const pixelX = node.x * this.tileSize + this.tileSize / 2;
-                    const pixelY = node.y * this.tileSize + this.tileSize / 2;
-                    this.predictionGraphics.lineTo(pixelX, pixelY);
-                });
-            }
-
-            this.predictionGraphics.strokePath();
-
-            // 시작점에 작은 원 표시
-            if (vUnit.pathLogs && vUnit.pathLogs.length > 0) {
-                this.predictionGraphics.fillStyle(color, 0.5);
-                this.predictionGraphics.fillCircle(vUnit.pathLogs[0].x, vUnit.pathLogs[0].y, 3);
-            }
-            // ---------------------------------------------------------------
-            // 2. [미래] 앞으로 갈 길 그리기 (vUnit.path) - ★ 추가된 부분
-            if (vUnit.path && vUnit.path.length > 0) {
-                if (!hasHistory) {
-                    this.predictionGraphics.moveTo(vUnit.x, vUnit.y);
-                }
+            // 시뮬레이션 결과(이미 소환된 유령) 시각화
+            results.forEach(vUnit => {
+                if (!vUnit.isSpawned) return; 
                 
-                vUnit.path.forEach(node => {
-                    const pixelX = node.x * this.tileSize + this.tileSize / 2;
-                    const pixelY = node.y * this.tileSize + this.tileSize / 2;
-                    this.predictionGraphics.lineTo(pixelX, pixelY);
-                });
-            } 
+                const color = (vUnit.team === 'ALLY') ? 0x00ff00 : 0xff0000;
 
+                // 경로 그리기
+                this.predictionGraphics.lineStyle(2, color, 0.5); 
+                this.predictionGraphics.beginPath();
 
-            // 그 다음, 살아있으면 유령을, 죽었으면 해골을 표시
-            if (vUnit.active) {
-                this.createGhost(vUnit.x, vUnit.y, vUnit.name, color, 0.6, vUnit.currentHp, vUnit.stats.hp);
-            } else {
-                const skull = this.add.text(vUnit.x, vUnit.y, '💀', { 
-                    fontSize: '24px', stroke: '#000', strokeThickness: 3
-                }).setOrigin(0.5);
-                this.ghostGroup.add(skull);
+                let hasHistory = false;
+                if (vUnit.pathLogs && vUnit.pathLogs.length > 0) {
+                    this.predictionGraphics.moveTo(vUnit.pathLogs[0].x, vUnit.pathLogs[0].y);
+                    for (let i = 1; i < vUnit.pathLogs.length; i++) {
+                        this.predictionGraphics.lineTo(vUnit.pathLogs[i].x, vUnit.pathLogs[i].y);
+                    }
+                    this.predictionGraphics.lineTo(vUnit.x, vUnit.y);
+                    hasHistory = true;
+                }
+                if (vUnit.path && vUnit.path.length > 0) {
+                    if (!hasHistory) this.predictionGraphics.moveTo(vUnit.x, vUnit.y);
+                    vUnit.path.forEach(node => {
+                        const pixelX = node.x * this.tileSize + this.tileSize / 2;
+                        const pixelY = node.y * this.tileSize + this.tileSize / 2;
+                        this.predictionGraphics.lineTo(pixelX, pixelY);
+                    });
+                }
+                this.predictionGraphics.strokePath();
+
+                // 유령 표시
+                if (vUnit.active) {
+                    this.createGhost(vUnit.x, vUnit.y, vUnit.name, color, 0.7, vUnit.currentHp, vUnit.stats.hp, vUnit.isBonus);
+                } else {
+                    const skull = this.add.text(vUnit.x, vUnit.y, '💀', { fontSize: '24px', stroke: '#000', strokeThickness: 3 }).setOrigin(0.5);
+                    this.ghostGroup.add(skull);
+                }
+            });
+        }
+
+        // ★ [수정 3] 예약된 유닛 표시는 '항상' 실행 (전투 중이어도 보이게)
+        // 조건: 아직 시간이 안 됐고(time > currentTime) && 아직 소환 안 된(!plan.spawned) 유닛
+        this.deployedObjects.forEach(plan => {
+            if (plan.time > currentTime && !plan.spawned) {
+                if (plan.type === 'Unit') {
+                    // 보너스 타임 여부 체크
+                    let isBonus = false;
+                    const stats = this.getAdjustedStats('Unit', plan.name);
+                    
+                    if (stats.bonusTime) {
+                        const [start, end] = stats.bonusTime;
+                        if (plan.time >= start && plan.time <= end) {
+                            isBonus = true;
+                        }
+                    }
+
+                    // 반투명 유령 표시 (대기 상태)
+                    this.createGhost(
+                        plan.x, plan.y, plan.name, 
+                        0x00ff00, 
+                        0.3, // 투명도 0.3
+                        stats.hp, stats.hp, 
+                        isBonus
+                    );
+                    
+                    // 예약 시간 텍스트 표시
+                    const timeText = this.add.text(plan.x, plan.y + 30, `⏳${plan.time}s`, {
+                        fontSize: '12px', color: '#fff', stroke: '#000', strokeThickness: 2
+                    }).setOrigin(0.5);
+                    this.ghostGroup.add(timeText);
+                }
             }
         });
 
-        // 적군 소환 예고 (아직 소환되지 않은 미래의 적 표시)
+        // 적군 예고 표시 (선택 사항: 적군도 미리 보고 싶다면 유지)
         this.enemyWave.forEach(plan => {
-            if (plan.time > currentTime) {
-                if (plan.type === 'Unit') {
-                    // 미래에 나올 적은 반투명한 붉은색 유령으로 표시
-                    this.createGhost(plan.x, plan.y, plan.name, 0xff0000, 0.4, 100, 100);
-                }
+            if (plan.time > currentTime && plan.type === 'Unit' && !plan.spawned) {
+                this.createGhost(plan.x, plan.y, plan.name, 0xff0000, 0.3, 100, 100, false);
             }
         });
     }
-    
-    
     // [보조 함수] drawPredictions를 위한 빈 함수 (호환성 유지)
     drawPredictions() {
         this.updateGhostSimulation();
     }
-
-  createGhost(x, y, name, color, alpha, currentHp, maxHp) {
+createGhost(x, y, name, color, alpha, currentHp, maxHp, isBonus = false) {
         let imgKey = '';
-        if (UNIT_STATS[name] && UNIT_STATS[name].image) {
+        if (typeof UNIT_STATS !== 'undefined' && UNIT_STATS[name] && UNIT_STATS[name].image) {
              imgKey = UNIT_STATS[name].image; 
         } else {
              imgKey = 'img_' + name; 
@@ -1029,12 +1206,22 @@ updateGhostSimulation() {
         if (this.textures.exists(imgKey)) {
             ghost = this.add.sprite(x, y, imgKey);
             ghost.setDisplaySize(40, 40); 
-            ghost.setTint(0x888888); 
+            
+            // ★ [핵심] 보너스 타임 적용 시 청록색 틴트, 아니면 회색 틴트
+            if (isBonus) {
+                ghost.setTint(0x00ffcc); // Cyan (형광 청록색)
+            } else {
+                ghost.setTint(0x888888); // Grey (기존 유령 색)
+            }
         } else {
+            // 이미지가 없는 경우 원으로 대체
             ghost = this.add.circle(x, y, 15, color);
+            if (isBonus) {
+                ghost.setFillStyle(0x00ffcc);
+            }
         }
         
-        // ★ [수정] 기지의 경우 유령 이미지는 숨기고(Alpha=0), 체력바만 보여줍니다.
+        // 기지의 경우 유령 이미지는 숨기고(Alpha=0), 체력바만 보여줍니다.
         if (name === '기지') {
             ghost.setAlpha(0); 
         } else {
@@ -1057,7 +1244,6 @@ updateGhostSimulation() {
             const hpColor = (ratio < 0.3) ? 0xff0000 : 0xffff00; 
             const hpBar = this.add.rectangle(x, y - yOffset, barWidth * ratio, 5, hpColor);
             
-            // 가운데 정렬 보정을 위해 컨테이너를 쓰거나, 여기선 간단히 유지
             this.ghostGroup.add(hpBar);
         }
 
@@ -1067,6 +1253,79 @@ updateGhostSimulation() {
 
 updateCostUI() {
         this.uiManager.updateCostUI();
+    }
+    createTimelineUI() {
+        const slider = document.getElementById('timeline-slider');
+        if (!slider) return;
+
+        const wrapper = slider.parentElement; 
+        
+        // 1. 슬라이더 전용 컨테이너 생성
+        let trackContainer = document.getElementById('slider-track-container');
+        if (!trackContainer) {
+            trackContainer = document.createElement('div');
+            trackContainer.id = 'slider-track-container';
+            
+            // 스타일 설정
+            trackContainer.style.flexGrow = '1'; 
+            trackContainer.style.position = 'relative'; 
+            trackContainer.style.height = '100%';
+            trackContainer.style.display = 'flex';
+            trackContainer.style.alignItems = 'center';
+            trackContainer.style.margin = '0 10px'; 
+
+            // DOM 재구성: wrapper > container > elements
+            wrapper.insertBefore(trackContainer, slider); 
+            trackContainer.appendChild(slider);           
+        }
+
+        // 2. [Layer 1] 배경 트랙 (회색 바닥) - 새로 추가!
+        // 기존 슬라이더의 배경(#444) 역할을 대신합니다.
+        let visualTrack = document.getElementById('timeline-visual-track');
+        if (!visualTrack) {
+            visualTrack = document.createElement('div');
+            visualTrack.id = 'timeline-visual-track';
+            trackContainer.appendChild(visualTrack); // 슬라이더보다 먼저 추가 (뒤에 배치)
+        }
+        
+        visualTrack.style.position = 'absolute';
+        visualTrack.style.width = '100%';
+        visualTrack.style.height = '6px'; // 슬라이더 두께
+        visualTrack.style.backgroundColor = '#444'; // 기존 트랙 색상
+        visualTrack.style.borderRadius = '3px';
+        visualTrack.style.top = '50%';
+        visualTrack.style.transform = 'translateY(-50%)';
+        visualTrack.style.zIndex = '1'; // 맨 밑
+
+        // 3. [Layer 2] 보너스 인디케이터 (초록색 구간)
+        let indicator = document.getElementById('timeline-bonus-bar');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'timeline-bonus-bar';
+            trackContainer.appendChild(indicator);
+        }
+
+        indicator.style.position = 'absolute';
+        indicator.style.height = '6px'; 
+        indicator.style.top = '50%';    
+        indicator.style.transform = 'translateY(-50%)'; 
+        indicator.style.backgroundColor = '#00ffcc'; 
+        indicator.style.opacity = '1.0';        // 선명하게 (트랙 위에 있으므로 불투명해도 됨)
+        indicator.style.pointerEvents = 'none'; 
+        indicator.style.borderRadius = '3px';
+        indicator.style.zIndex = '2'; // 트랙 위, 슬라이더 아래
+        indicator.style.display = 'none';
+
+        // 4. [Layer 3] 실제 슬라이더 (손잡이 & 터치 영역)
+        // ★ 핵심: 배경을 투명하게 하여 뒤의 트랙과 보너스 바가 보이게 함
+        slider.style.width = '100%';
+        slider.style.margin = '0';
+        slider.style.position = 'relative';
+        slider.style.zIndex = '3'; // 최상단 (손잡이가 가려지지 않음)
+        slider.style.background = 'transparent'; // ★ 배경 투명화
+        
+        // (참고) 브라우저 기본 스타일 간섭 제거를 위해 appearance 설정이 필요할 수 있음
+        // style.css에 이미 -webkit-appearance: none;이 있으므로 잘 작동할 것입니다.
     }
 
 showPopup(title, msg, onConfirm, isConfirm) {

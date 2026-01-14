@@ -924,3 +924,8 @@ button { padding: 8px 16px; border-radius: 6px; border: none; font-weight: bold;
     box-shadow: 0 0 10px rgba(0,0,0,0.5);
 }
 .tooltip-header { font-size: 16px; margin-bottom: 5px; border-bottom: 1px solid #444; padding-bottom: 3px; }
+
+/* style.css 맨 아래 추가 */
+#event-popup {
+    pointer-events: auto !important; /* 이 팝업 전체를 클릭 가능하게 변경 */
+}

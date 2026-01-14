@@ -3,86 +3,133 @@
 // 배치 제한선
 const DEPLOY_LIMIT = 266; 
 
+// ============================================================
+// ⚔️ 유닛 데이터 (Unit Stats)
+// ============================================================
 const UNIT_STATS = {
-    '검사': { 
-        cost: 2, hp: 50, damage: 5, range: 40, attackSpeed: 1.0, speed: 60, color: 0x00ff00,
-        castTime: 0, 
-        projectileSpeed: 0,
-        detectRange: 200, 
-        count: 3,
-        attackType: 'SLASH', 
+    '검사': {
+        cost: 3,
+        hp: 120,
+        damage: 12,
+        range: 50, // 근접
+        attackSpeed: 1.2,
+        speed: 60,
+        race: '보병',
+        desc: '밸런스가 잡힌 기본 보병입니다.',
         image: 'img_swordman',
-        race: '보병',
-        traits: [] 
+        rarity: 'COMMON',
+        
+        // ★ [전략] 초반 러시 및 라인 유지
+        bonusTime: [0, 3],
+    bonusEffect: { stat: 'cost', val: -1 }
     },
-    '궁수': { 
-        cost: 3, hp: 30, damage: 15, range: 180, attackSpeed: 1.5, speed: 50, color: 0x00ffff,
-        castTime: 0.5, // 0.5초 조준 (이때 CC기 맞으면 캔슬됨)
-        projectileSpeed: 300,
-        detectRange: 350, 
-        count: 2,
-        attackType: 'SHOOT', 
+
+    '궁수': {
+        cost: 4,
+        hp: 80,
+        damage: 15,
+        range: 350, // 긴 사거리
+        attackSpeed: 3, // 약간 느림
+        speed: 45,
+        count: 1,
+        race: '보병',
+        desc: '멀리서 적을 공격하는 지원 사격수입니다.',
         image: 'img_archer',
-        race: '보병',
-        traits: [] 
+        rarity: 'COMMON',
+        attackType: 'SHOOT',      // 투사체 발사 모드 설정
+        projectileSpeed: 400,     // 투사체 속도
+
+        // ★ [전략] 후반에 안정적인 프리딜 구도 형성
+        bonusTime: [7, 10],
+        bonusEffect: { stat: 'damage', val: 5 }
     },
-    '힐러': { 
-        cost: 3, hp: 60, damage: -15, range: 100, attackSpeed: 2.0, speed: 45, color: 0xffffff,
-        castTime: 0, 
-        projectileSpeed: 200,
-        detectRange: 250, 
-        attackType: 'THRUST', 
-        image: 'img_healer',
-        race: '보병',
-        traits: [] 
-    },
-    '방벽': { 
-        cost: 1, hp: 200, damage: 0, range: 0, attackSpeed: 0, speed: 0, color: 0x888888,
-        projectileSpeed: 0,
-        detectRange: 0,   
-        image: 'img_wall',
+
+    '방벽': {
+        cost: 2,
+        hp: 400,
+        damage: 0,
+        range: 0,
+        attackSpeed: 0,
+        speed: 0, // 이동 불가
         race: '구조물',
-        traits: [] 
+        desc: '적의 이동을 막고 공격을 받아냅니다.',
+        image: 'img_wall',
+        rarity: 'COMMON',
+
+        // ★ [전략] 극초반에 튼튼한 진지 구축
+        bonusTime: [0, 2],
+        bonusEffect: { stat: 'hp', val: 150 }
     },
-    '암살자': { 
-        cost: 4, hp: 80, damage: 9999, range: 40, attackSpeed: 0.8, speed: 70, color: 0xaa00ff,
-        castTime: 0, 
-        projectileSpeed: 0,
-        detectRange: 250, 
-        attackType: 'THRUST', 
-        image: 'img_assassin',
+
+    '힐러': {
+        cost: 5,
+        hp: 100,
+        damage: -15, // 음수 값은 힐로 처리
+        range: 250,
+        attackSpeed: 2.0,
+        speed: 40,
+        race: '지원가',
+        desc: '아군의 체력을 회복시킵니다.',
+        image: 'img_healer',
+        rarity: 'RARE',
+
+        // ★ [전략] 난전이 벌어지는 중반에 슈퍼 세이브
+        bonusTime: [3, 7],
+        bonusEffect: { stat: 'damage', val: -15 }
+    },
+
+    '암살자': {
+        cost: 6,
+        hp: 140,
+        damage: 45,
+        range: 50,
+        attackSpeed: 0.8, // 빠름
+        speed: 90, // 매우 빠름
         race: '보병',
-        traits: ['침투', '은신'] 
+        traits: ['은신', '침투'], // 특성 예시
+        desc: '빠르게 적진으로 파고듭니다.',
+        image: 'img_assassin',
+        rarity: 'EPIC',
+
+        // ★ [전략] 막바지 킬 캐치 및 기지 테러
+        bonusTime: [8, 10],
+        bonusEffect: { stat: 'damage', val: 50, unit: '%' }
     },
+
+    // (기존 레거시 데이터 제거 후 정리된 적군/기지 데이터)
     '적군': { 
         cost: 2, hp: 80, damage: 8, range: 40, attackSpeed: 1.0, speed: 40, color: 0xff0000,
-        castTime: 0, 
         projectileSpeed: 0,
         detectRange: 200, 
         attackType: 'SLASH', 
         image: 'img_enemy',
         race: '보병',
-        traits: [] 
+        traits: [] ,
+        rarity: 'COMMON'
     },
     '기지': { 
         cost: 0, hp: 1000, damage: 0, range: 0, attackSpeed: 0, speed: 0, color: 0x000000,
         projectileSpeed: 0,
         detectRange: 0,
         race: '구조물',
-        traits: [] 
+        traits: [] ,
+        rarity: 'COMMON',
+        image: 'base_knight' // 이미지 키 추가 권장
     }
 };
-// js/data.js
 
 // ★ CC기 규칙 정의 (확장성 핵심)
 const CC_RULES = {
     'STUN':      { canMove: false, canAttack: false, cancelCast: true,  msg: "😵 STUN" },
     'KNOCKBACK': { canMove: false, canAttack: false, cancelCast: true,  msg: "🔙 PUSH" },
-    'SILENCE':   { canMove: true,  canAttack: true,  cancelCast: true,  msg: "😶 SILENCE" }, // 이동/평타는 되는데 스킬(캐스팅)만 못함
-    'ROOT':      { canMove: false, canAttack: true,  cancelCast: false, msg: "🔒 ROOT" },    // 이동만 불가
-    'SLOW':      { canMove: true,  canAttack: true,  cancelCast: false, msg: "🐌 SLOW" }     // 속도만 느려짐 (로직 별도 처리)
+    'SILENCE':   { canMove: true,  canAttack: true,  cancelCast: true,  msg: "😶 SILENCE" },
+    'ROOT':      { canMove: false, canAttack: true,  cancelCast: false, msg: "🔒 ROOT" },
+    'SLOW':      { canMove: true,  canAttack: true,  cancelCast: false, msg: "🐌 SLOW" }
 };
 
+// ============================================================
+// 👑 지휘관 데이터
+// ============================================================
 const COMMANDERS = {
     'knight': { 
         name: '기사단장', 
@@ -115,54 +162,69 @@ const COMMANDERS = {
 
 let selectedCommander = 'artillery';
 
+// ============================================================
+// ✨ 스킬 데이터 (Skill Stats)
+// ============================================================
 const SKILL_STATS = {
-    '화염구': { 
-        cost: 4, 
-        radius: 70, 
-        color: 0xff8800,
-        skillType: 'OFFENSE',
-        damage: 60,
-        stun: 0,
-        shield: 0,
-        hasProjectile: true, // ★ 콤마 추가!
-        friendlyFire: true   // 아군도 맞음
+    '화염구': {
+        cost: 4,
+        damage: 50,
+        radius: 120, // 폭발 반경
+        desc: '범위 내 적들에게 화염 피해를 입힙니다.',
+        image: 'img_fireball',
+        rarity: 'COMMON',
+        color: 0xff4400,        // 주황색 폭발
+        hasProjectile: true,    // 하늘에서 떨어지는 연출
+        // ★ [전략] 뭉쳐있는 적 후반 정리
+        bonusTime: [5, 10],
+        bonusEffect: { stat: 'damage', val: 30 }
     },
-    '방어막': { 
-        cost: 3, 
-        radius: 50, 
-        color: 0x8888ff,
-        skillType: 'DEFENSE',
-        damage: 0,
-        stun: 0,
-        shield: 50,
-        hasProjectile: false 
-    },
-    '얼음': { 
-        cost: 3, 
-        radius: 60, 
-        color: 0x0088ff,
-        skillType: 'OFFENSE',
+
+    '돌멩이': {
+        cost: 1,
         damage: 10,
-        stun: 2.0,
-        shield: 0,
-        hasProjectile: false, // ★ 콤마 추가!
-        friendlyFire: false 
+        radius: 30,
+        desc: '적 하나에게 소량의 피해를 줍니다. (저비용)',
+        image: 'img_stone',
+        rarity: 'COMMON',
+        color: 0x888888,        // 회색
+        hasProjectile: true,    // 투사체 있음
+        // ★ [전략] 아무 때나 부담 없이 사용
+        bonusTime: [0, 10],
+        bonusEffect: { stat: 'stun', val: 0.5 }
     },
-    '돌멩이': { 
-        cost: 1, 
-        radius: 20, 
-        color: 0xaaaaaa,
-        skillType: 'OFFENSE',
-        damage: 15,
-        stun: 0.5,
-        shield: 0,
-        hasProjectile: true, // ★ 콤마 추가!
-        friendlyFire: false 
+
+    '방어막': {
+        cost: 3,
+        effect: 'shield',
+        value: 50,
+        desc: '아군에게 일시적인 보호막을 부여합니다.',
+        image: 'img_shield',
+        rarity: 'RARE',
+        color: 0x00ffff,        // 시안(Cyan)색
+        hasProjectile: false,   // 즉시 발동
+        // ★ [전략] 적 공격이 시작되기 전 선제 방어
+        bonusTime: [0, 5],
+        bonusEffect: { stat: 'value', val: 50 } // 방어막은 'value' 속성 사용
+    },
+
+    '얼음': {
+        cost: 5,
+        effect: 'freeze',
+        duration: 3.0,
+        desc: '범위 내 적들을 3초간 얼립니다.',
+        image: 'img_ice',
+        rarity: 'EPIC',
+        color: 0x0088ff,        // 파란색
+        hasProjectile: false,   // 즉시 발동 (바닥에서 솟아오름)
+        // ★ [전략] 위급한 중후반에 메즈기 강화
+        bonusTime: [5, 9],
+        bonusEffect: { stat: 'duration', val: 2.0 } // 지속시간 증가
     }
 };
 
 const STARTER_DECK = [
-    'Unit-검사', 'Unit-검사', 'Unit-검사',
+    'Unit-검사', 'Unit-암살자', 'Unit-암살자',
     'Unit-궁수', 'Unit-궁수',
     'Unit-방벽', 'Unit-방벽',
     'Unit-암살자', 'Unit-암살자',
@@ -259,3 +321,18 @@ const MAP_DATA = {
 function getMapData(id) {
     return MAP_DATA[id] || MAP_DATA['DefaultMap'];
 }
+
+// ★ [핵심] 전역 변수 등록 (다른 파일에서 사용 가능하도록)
+window.DEPLOY_LIMIT = DEPLOY_LIMIT;
+window.UNIT_STATS = UNIT_STATS;
+window.CC_RULES = CC_RULES;
+window.COMMANDERS = COMMANDERS;
+window.SKILL_STATS = SKILL_STATS;
+window.STARTER_DECK = STARTER_DECK;
+window.MAX_HAND = MAX_HAND;
+window.MAX_COST = MAX_COST;
+window.RECOVERY_COST = RECOVERY_COST;
+window.ENEMY_COMMANDERS = ENEMY_COMMANDERS;
+window.DEFAULT_ENEMY_COMMANDER = DEFAULT_ENEMY_COMMANDER;
+window.getEnemyStats = getEnemyStats;
+window.getMapData = getMapData;

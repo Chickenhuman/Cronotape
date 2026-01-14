@@ -106,11 +106,12 @@ class GhostSimulator {
             castTimer: 0,
             pathTimer: 0, 
             pathLogs: [],
-            path: []
+            path: [],
+// ★ [복제] 실제 유닛이 보너스 상태였다면 복제 (없으면 false)
+            isBonus: realUnit.isBonus || false
         };
     }
-
-    processPlans(simTime, plans, ghosts, mapContext) {
+processPlans(simTime, plans, ghosts, mapContext) {
         plans.forEach(plan => {
             if (!plan.executed && plan.time <= simTime) {
                 plan.executed = true;
@@ -121,6 +122,25 @@ class GhostSimulator {
                     if (!stats && plan.stats) stats = plan.stats; 
                     
                     if (stats) {
+                        // ★ [수정] 보너스 타임 계산 및 적용
+                        let finalStats = this.fastCloneStats(stats);
+                        let isBonus = false;
+
+                        // BattleScene과 동일한 로직 적용
+                        if (stats.bonusTime && stats.bonusEffect) {
+                            const [start, end] = stats.bonusTime;
+                            // plan.time: 배치 예정 시간
+                            if (plan.time >= start && plan.time <= end) {
+                                const effect = stats.bonusEffect;
+                                if (effect.unit === '%') {
+                                    finalStats[effect.stat] = Math.floor(finalStats[effect.stat] * (1 + effect.val / 100));
+                                } else {
+                                    finalStats[effect.stat] += effect.val;
+                                }
+                                isBonus = true; // 보너스 적용됨 표시
+                            }
+                        }
+
                         const count = stats.count || 1;
                         for(let i=0; i<count; i++) {
                             const offsetX = (plan.offsets && plan.offsets[i]) ? plan.offsets[i].x : 0;
@@ -131,8 +151,8 @@ class GhostSimulator {
                                 x: plan.x + offsetX,
                                 y: plan.y + offsetY,
                                 team: plan.team, 
-                                stats: this.fastCloneStats(stats),
-                                currentHp: stats.hp,
+                                stats: finalStats, // 강화된 스탯 사용
+                                currentHp: finalStats.hp,
                                 active: true,
                                 isSpawned: true,
                                 attackCooldown: 0,
@@ -141,7 +161,8 @@ class GhostSimulator {
                                 castTimer: 0,
                                 pathTimer: 0,
                                 pathLogs: [],
-                                path: [] 
+                                path: [],
+                                isBonus: isBonus // ★ 시각 처리를 위한 플래그 전달
                             });
                         }
                     }

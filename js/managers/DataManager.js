@@ -224,7 +224,7 @@ class DataManager {
         const target = this.getNode(targetId);
 
         if (!curr || !target) return false;
-        if (!curr.connections.includes(targetId)) return false;
+        // if (!curr.connections.includes(targetId)) return false;
 
         const dist = Phaser.Math.Distance.Between(curr.x, curr.y, target.x, target.y);
         
@@ -242,13 +242,23 @@ class DataManager {
         return true;
     }
 
-    completeCurrentNode() {
+completeCurrentNode() {
         const currId = this.campaign.currentNodeId;
+        
+        // 이미 클리어한 노드가 아닐 경우에만 처리
         if (!this.campaign.clearedNodes.includes(currId)) {
             this.campaign.clearedNodes.push(currId);
+            
             const node = this.getNode(currId);
-            if (node && (node.type === 'BATTLE' || node.type === 'ELITE')) {
-                node.type = 'EMPTY'; 
+            
+            // [수정] EVENT, SHOP 등도 방문 후에는 재진입 불가(EMPTY) 처리
+            // (상점은 전략에 따라 유지할 수도 있지만, 보통 로그라이크는 닫힙니다)
+            if (node) {
+                const clearableTypes = ['BATTLE', 'ELITE', 'EVENT', 'SHOP']; // SHOP 포함 여부는 선택
+                
+                if (clearableTypes.includes(node.type)) {
+                    node.type = 'EMPTY'; 
+                }
             }
             this.saveData();
         }

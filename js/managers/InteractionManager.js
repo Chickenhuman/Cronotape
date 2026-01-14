@@ -96,8 +96,7 @@ class InteractionManager {
 // 마커 생성 (시각적 표시)
         const marker = this.scene.add.circle(pointer.x, pointer.y, 15, stat.color);
         marker.setAlpha(0.5);
-        const text = this.scene.add.text(pointer.x-15, pointer.y-35, `${currentTime}s`, {fontSize:'10px', backgroundColor:'#000'});
-
+        
         // ★ [수정] 미리 오프셋(위치 오차)을 계산하여 배열에 저장합니다.
         const offsets = [];
         const count = stat.count || 1;
@@ -117,7 +116,7 @@ class InteractionManager {
         const plan = {
             type: type, name: name, x: pointer.x, y: pointer.y,
             time: parseFloat(currentTime), spawned: false,
-            visualMarker: marker, visualText: text,
+            visualMarker: marker,
             offsets: offsets // ★ 저장된 오프셋을 plan에 포함
         };
         this.scene.deployedObjects.push(plan);
