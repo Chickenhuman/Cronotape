@@ -109,7 +109,7 @@ const SVG_DATA = {
     // ---------------------------------------------------------------------
 // 1. 방패 (앞쪽에 배치)
     acc_shield: {
-        offset: { x: -11, y: 5 },
+        offset: { x: -12, y: 21 },
         depth: 1,
         render: () => `
             <svg width="60" height="60" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
@@ -121,7 +121,7 @@ const SVG_DATA = {
     },
 
 acc_book: {
-        offset: { x: -12, y: 0},
+        offset: { x: -11, y: 18 },
         depth: 1,
         render: () => `
             <svg width="60" height="60" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">

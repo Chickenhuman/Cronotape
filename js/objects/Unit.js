@@ -132,34 +132,46 @@ class Unit extends Phaser.GameObjects.Container {
         this.sort('depth');
         this.startIdleAnim();
     }
-    
     startIdleAnim() {
         if (!this.active || !this.scene) return;
+        
+        // 랜덤 딜레이로 유닛마다 숨쉬는 타이밍 다르게
         const randomDelay = Math.random() * 1000;
 
         this.scene.time.delayedCall(randomDelay, () => {
             if (!this.active) return;
-            if (this.parts.body) {
-                const currentScale = this.parts.body.scaleY; 
-                this.scene.tweens.add({
-                    targets: this.parts.body,
-                    scaleY: currentScale * 0.95, 
-                    duration: 1000,
-                    yoyo: true,
-                    repeat: -1,
-                    ease: 'Sine.easeInOut'
-                });
-            }
-            if (this.parts.weapon) {
-                this.scene.tweens.add({
-                    targets: this.parts.weapon,
-                    angle: { from: 10, to: 20 },
-                    duration: 1000,
-                    yoyo: true,
-                    repeat: -1,
-                    ease: 'Sine.easeInOut'
-                });
-            }
+            
+            // 모든 파츠에 대해 트윈 적용
+            Object.keys(this.parts).forEach(key => {
+                const sprite = this.parts[key];
+                if (!sprite) return;
+                
+                // 1. 무기: 둥실둥실 (각도 조절)
+                if (key === 'weapon') {
+                    this.scene.tweens.add({
+                        targets: sprite,
+                        angle: { from: 10, to: 20 },
+                        duration: 1000,
+                        yoyo: true,
+                        repeat: -1,
+                        ease: 'Sine.easeInOut'
+                    });
+                } 
+                // 2. 몸통 & 장신구: 숨쉬기 (스케일 조절)
+                else {
+                    // ★ 장신구(acc)도 여기서 같이 처리됨
+                    const currentScaleY = (this.defaultPose[key] && this.defaultPose[key].scaleY) || 1;
+                    
+                    this.scene.tweens.add({
+                        targets: sprite,
+                        scaleY: currentScaleY * 0.95, // 5% 수축
+                        duration: 1000,
+                        yoyo: true,
+                        repeat: -1,
+                        ease: 'Sine.easeInOut'
+                    });
+                }
+            });
         }); 
     }
 
@@ -345,20 +357,24 @@ update(dt) {
         }
         this.dealDamage(target);
     }
-
+// [수정] 스윙 공격: 장신구도 역동적으로 움직임
     playSwingAnim() {
         if (!this.active || !this.scene) return;
         if (!this.parts.weapon) return;
+
+        // 1. 기존 트윈 제거 및 초기화
         this.scene.tweens.killTweensOf(this.parts.weapon);
-        const defW = this.defaultPose.weapon;
-        this.parts.weapon.setPosition(defW.x, defW.y);
-        this.parts.weapon.setAngle(defW.angle);
-        if (this.parts.body) {
-            this.scene.tweens.killTweensOf(this.parts.body);
-            const defB = this.defaultPose.body;
-            this.parts.body.setPosition(defB.x, defB.y);
-            this.parts.body.setAngle(defB.angle);
-        }
+        if (this.parts.body) this.scene.tweens.killTweensOf(this.parts.body);
+        if (this.parts.acc) this.scene.tweens.killTweensOf(this.parts.acc); // ★ 장신구 트윈 초기화
+
+        // 초기 위치 복구
+        this.resetPartToDefault('weapon');
+        this.resetPartToDefault('body');
+        this.resetPartToDefault('acc'); // ★
+
+        // ====================================================
+        // ⚔️ 무기 애니메이션 (기존과 동일)
+        // ====================================================
         this.scene.tweens.add({
             targets: this.parts.weapon,
             angle: -45, 
@@ -374,77 +390,110 @@ update(dt) {
                     onComplete: () => {
                         this.scene.tweens.add({
                             targets: this.parts.weapon,
-                            angle: defW.angle,
+                            angle: this.defaultPose.weapon.angle,
                             duration: 300,
                             ease: 'Quad.easeOut',
-                            onComplete: () => {
-                                this.startIdleAnim();
-                            }
+                            onComplete: () => this.startIdleAnim()
                         });
                     }
                 });
             }
         });
+
+        // ====================================================
+        // 🛡️ 몸통 & 장신구 애니메이션 (싱크로율 맞춤)
+        // ====================================================
+        
+        // (1) 예비 동작 (뒤로 젖히기)
         if (this.parts.body) {
             this.scene.tweens.add({
                 targets: this.parts.body,
-                x: '-=5', 
-                angle: -10,
-                duration: 150,
+                x: '-=5', angle: -10, duration: 150
+            });
+        }
+        // ★ 장신구도 같이 뒤로 (약간 더 과장되게)
+        if (this.parts.acc) {
+            this.scene.tweens.add({
+                targets: this.parts.acc,
+                x: '-=8', // 몸보다 더 뒤로 감 (관성)
+                angle: -15, 
+                duration: 150 
+            });
+        }
+
+        // (2) 타격 동작 (앞으로 내지르기)
+        this.scene.time.delayedCall(150, () => {
+            if (this.parts.body) {
+                this.scene.tweens.add({
+                    targets: this.parts.body,
+                    x: '+=15', angle: 20, duration: 50,
+                    ease: 'Back.easeOut', yoyo: true, hold: 100,
+                    onComplete: () => this.resetPartToDefault('body')
+                });
+            }
+            
+            // ★ 장신구 타격 모션
+            if (this.parts.acc) {
+                this.scene.tweens.add({
+                    targets: this.parts.acc,
+                    x: '+=20', // 몸보다 더 앞으로 튀어나감
+                    angle: 25, 
+                    duration: 50,
+                    ease: 'Back.easeOut', yoyo: true, hold: 100,
+                    onComplete: () => this.resetPartToDefault('acc')
+                });
+            }
+        });
+    }
+    // [헬퍼 함수] 파츠 위치 초기화
+    resetPartToDefault(key) {
+        if (this.parts[key] && this.defaultPose[key]) {
+            const def = this.defaultPose[key];
+            this.parts[key].setPosition(def.x, def.y);
+            this.parts[key].setAngle(def.angle);
+            this.parts[key].setScale(def.scaleX, def.scaleY);
+        }
+    }
+// 2. 찌르기 (Stab) - 앞으로 쑥 내밀기
+    playStabAnim() {
+        if (!this.active || !this.scene) return;
+        
+        this.scene.tweens.killTweensOf(this.parts.weapon);
+        if (this.parts.body) this.scene.tweens.killTweensOf(this.parts.body);
+        if (this.parts.acc) this.scene.tweens.killTweensOf(this.parts.acc); // ★
+
+        this.resetPartToDefault('weapon');
+        this.resetPartToDefault('body');
+        this.resetPartToDefault('acc'); // ★
+
+        const defW = this.defaultPose.weapon; 
+
+        // [무기] 뒤로 뺐다가 앞으로 찌르기
+        if (this.parts.weapon) {
+            this.scene.tweens.add({
+                targets: this.parts.weapon,
+                x: defW.x - 10, 
+                duration: 100,
+                ease: 'Cubic.easeOut',
                 onComplete: () => {
+                    this.parts.weapon.angle = 90; 
                     this.scene.tweens.add({
-                        targets: this.parts.body,
-                        x: '+=15', 
-                        angle: 20,
-                        duration: 50,
-                        ease: 'Back.easeOut',
+                        targets: this.parts.weapon,
+                        x: defW.x + 40, 
+                        duration: 60,   
+                        ease: 'Expo.easeOut',
                         yoyo: true,
-                        hold: 100,
+                        hold: 50,
                         onComplete: () => {
-                            this.parts.body.x = this.defaultPose.body.x;
-                            this.parts.body.angle = this.defaultPose.body.angle;
+                            this.resetPartToDefault('weapon');
+                            if (!this.parts.body) this.startIdleAnim();
                         }
                     });
                 }
             });
         }
-    }
 
-    playStabAnim() {
-        if (!this.active || !this.scene) return;
-        if (!this.parts.weapon) return;
-        this.scene.tweens.killTweensOf(this.parts.weapon);
-        const defW = this.defaultPose.weapon; 
-        this.parts.weapon.setPosition(defW.x, defW.y);
-        this.parts.weapon.setAngle(defW.angle);
-        if (this.parts.body) {
-            this.scene.tweens.killTweensOf(this.parts.body);
-            const defB = this.defaultPose.body;
-            this.parts.body.setPosition(defB.x, defB.y);
-            this.parts.body.setAngle(defB.angle);
-        }
-        this.scene.tweens.add({
-            targets: this.parts.weapon,
-            x: defW.x - 10, 
-            duration: 100,
-            ease: 'Cubic.easeOut',
-            onComplete: () => {
-                this.parts.weapon.angle = 90; 
-                this.scene.tweens.add({
-                    targets: this.parts.weapon,
-                    x: defW.x + 40, 
-                    duration: 60,   
-                    ease: 'Expo.easeOut',
-                    yoyo: true,
-                    hold: 50,
-                    onComplete: () => {
-                        this.parts.weapon.angle = defW.angle;
-                        this.parts.weapon.x = defW.x;
-                        if (!this.parts.body) this.startIdleAnim();
-                    }
-                });
-            }
-        });
+        // [몸통] 같이 앞으로 쏠림 (+15px)
         if (this.parts.body) {
             this.scene.tweens.add({
                 targets: this.parts.body,
@@ -454,26 +503,41 @@ update(dt) {
                 yoyo: true,
                 ease: 'Expo.easeOut',
                 onComplete: () => {
-                    this.parts.body.x = this.defaultPose.body.x;
+                    this.resetPartToDefault('body');
                     this.startIdleAnim();
                 }
             });
         }
-    }
 
+        // ★ [장신구] 관성으로 더 앞으로 튀어나감 (+20px)
+        if (this.parts.acc) {
+            this.scene.tweens.add({
+                targets: this.parts.acc,
+                x: this.defaultPose.acc.x + 20, // 몸보다 더 멀리 (망토가 펄럭이는 느낌)
+                duration: 60,
+                delay: 100, 
+                yoyo: true,
+                ease: 'Expo.easeOut',
+                onComplete: () => { this.resetPartToDefault('acc'); }
+            });
+        }
+    }
+// 3. 사격 (Shoot) - 반동으로 뒤로 밀림
     playShootAnim() { 
         if (!this.active || !this.scene) return;
-        if (this.parts.weapon) {
-            this.scene.tweens.killTweensOf(this.parts.weapon);
-            this.parts.weapon.setPosition(this.defaultPose.weapon.x, this.defaultPose.weapon.y);
-            this.parts.weapon.setAngle(this.defaultPose.weapon.angle);
-        }
-        if (this.parts.body) {
-            this.scene.tweens.killTweensOf(this.parts.body);
-            this.parts.body.setPosition(this.defaultPose.body.x, this.defaultPose.body.y);
-            this.parts.body.setAngle(this.defaultPose.body.angle);
-        }
+        
+        // 킬 & 리셋 생략 (코드 길이상 위와 동일하게 처리해주세요)
+        if (this.parts.weapon) this.scene.tweens.killTweensOf(this.parts.weapon);
+        if (this.parts.body) this.scene.tweens.killTweensOf(this.parts.body);
+        if (this.parts.acc) this.scene.tweens.killTweensOf(this.parts.acc);
+        
+        this.resetPartToDefault('weapon');
+        this.resetPartToDefault('body');
+        this.resetPartToDefault('acc');
+
         const duration = 150;
+
+        // [무기] 반동
         if (this.parts.weapon) {
             this.scene.tweens.add({ 
                 targets: this.parts.weapon, 
@@ -481,14 +545,11 @@ update(dt) {
                 angle: { from: 0, to: -25 }, 
                 duration: duration, 
                 yoyo: true,
-                onComplete: () => {
-                    if (this.parts.weapon) {
-                        this.parts.weapon.x = this.defaultPose.weapon.x;
-                        this.parts.weapon.angle = this.defaultPose.weapon.angle;
-                    }
-                }
+                onComplete: () => { this.resetPartToDefault('weapon'); }
             }); 
         }
+
+        // [몸통] 뒤로 밀림 (x: -5)
         if (this.parts.body) {
             this.scene.tweens.add({
                 targets: this.parts.body,
@@ -497,36 +558,50 @@ update(dt) {
                 duration: duration,
                 yoyo: true,
                 onComplete: () => {
-                    if (this.parts.body) {
-                        this.parts.body.x = this.defaultPose.body.x;
-                        this.parts.body.angle = this.defaultPose.body.angle;
-                    }
+                    this.resetPartToDefault('body');
                     this.startIdleAnim();
                 }
             });
         }
-    }
 
-    playCastAnim() { 
+        // ★ [장신구] 더 크게 밀림 (x: -8)
+        if (this.parts.acc) {
+            this.scene.tweens.add({
+                targets: this.parts.acc,
+                x: { from: 0, to: -8 }, // 더 큰 반동
+                angle: { from: 0, to: -8 }, 
+                duration: duration,
+                yoyo: true,
+                onComplete: () => { this.resetPartToDefault('acc'); }
+            });
+        }
+    }
+    // 4. 마법 시전 (Cast) - 공중 부양
+playCastAnim() { 
         if (!this.active || !this.scene) return;
-        const baseScaleX = (this.defaultPose.body.scaleX !== undefined) 
-                           ? this.defaultPose.body.scaleX 
-                           : this.parts.body.scaleX;
-        const baseScaleY = (this.defaultPose.body.scaleY !== undefined)
-                           ? this.defaultPose.body.scaleY
-                           : this.parts.body.scaleY;
-        if (this.parts.body) {
-            this.scene.tweens.killTweensOf(this.parts.body);
-            this.parts.body.setPosition(this.defaultPose.body.x, this.defaultPose.body.y);
-            this.parts.body.setAngle(this.defaultPose.body.angle);
-            this.parts.body.setScale(baseScaleX, baseScaleY);
-        }
-        if (this.parts.weapon) {
-            this.scene.tweens.killTweensOf(this.parts.weapon);
-            this.parts.weapon.setPosition(this.defaultPose.weapon.x, this.defaultPose.weapon.y);
-            this.parts.weapon.setAngle(this.defaultPose.weapon.angle);
-        }
+
+        // [초기화] 기존 애니메이션 중단 및 리셋
+        if (this.parts.weapon) this.scene.tweens.killTweensOf(this.parts.weapon);
+        if (this.parts.body) this.scene.tweens.killTweensOf(this.parts.body);
+        if (this.parts.acc) this.scene.tweens.killTweensOf(this.parts.acc);
+
+        this.resetPartToDefault('weapon');
+        this.resetPartToDefault('body');
+        this.resetPartToDefault('acc');
+
         const duration = 300;
+        
+        // ★ [핵심] 이 변수들이 선언되어 있어야 에러가 안 납니다!
+        const bodyScaleX = (this.defaultPose.body && this.defaultPose.body.scaleX) || 1;
+        const bodyScaleY = (this.defaultPose.body && this.defaultPose.body.scaleY) || 1;
+        
+        // 장신구 스케일 가져오기 (없으면 1)
+        let accScaleX = 1;
+        if (this.parts.acc && this.defaultPose.acc) {
+            accScaleX = this.defaultPose.acc.scaleX || 1;
+        }
+
+        // [무기] 위로 둥둥
         if (this.parts.weapon) {
             this.scene.tweens.add({ 
                 targets: this.parts.weapon, 
@@ -535,43 +610,56 @@ update(dt) {
                 duration: duration, 
                 yoyo: true,
                 ease: 'Sine.easeInOut',
-                onComplete: () => {
-                    if (this.parts.weapon) {
-                        this.parts.weapon.y = this.defaultPose.weapon.y;
-                        this.parts.weapon.angle = this.defaultPose.weapon.angle;
-                    }
-                }
+                onComplete: () => { this.resetPartToDefault('weapon'); }
             }); 
         }
+
+        // [몸통] 위로 둥둥 (약간 웅크림)
         if (this.parts.body) {
             this.scene.tweens.add({
                 targets: this.parts.body,
                 y: { from: this.defaultPose.body.y, to: this.defaultPose.body.y - 10 }, 
-                scaleX: { from: baseScaleX, to: baseScaleX * 0.95 }, 
+                scaleX: { from: bodyScaleX, to: bodyScaleX * 0.95 }, 
                 duration: duration, 
                 yoyo: true,
                 onComplete: () => {
-                    if (this.parts.body) {
-                        this.parts.body.y = this.defaultPose.body.y;
-                        this.parts.body.setScale(baseScaleX, baseScaleY);
-                    }
+                    this.resetPartToDefault('body');
                     this.startIdleAnim();
                 }
             });
         }
+
+        // [장신구] 부드럽게 퍼짐 (accScaleX 변수 사용)
+        if (this.parts.acc) {
+            this.scene.tweens.add({
+                targets: this.parts.acc,
+                y: { from: this.defaultPose.acc.y, to: this.defaultPose.acc.y - 15 },
+                
+                // 에러 원인이었던 부분: 이제 위에서 선언했으므로 정상 작동합니다.
+                scaleX: { from: accScaleX, to: accScaleX * 1.1 }, 
+                
+                duration: duration, 
+                yoyo: true,
+                onComplete: () => { this.resetPartToDefault('acc'); }
+            });
+        }
     }
 
-    playHeavySwingAnim() {
+playHeavySwingAnim() {
         if (!this.active || !this.scene) return; 
-        if (this.parts.weapon) {
-            this.scene.tweens.killTweensOf(this.parts.weapon);
-            this.parts.weapon.setAngle(this.defaultPose.weapon.angle);
-        }
-        if (this.parts.body) {
-            this.scene.tweens.killTweensOf(this.parts.body);
-            this.parts.body.setAngle(this.defaultPose.body.angle);
-        }
+        
+        // 초기화
+        this.scene.tweens.killTweensOf(this.parts.weapon);
+        if (this.parts.body) this.scene.tweens.killTweensOf(this.parts.body);
+        if (this.parts.acc) this.scene.tweens.killTweensOf(this.parts.acc); // ★
+
+        this.resetPartToDefault('weapon');
+        this.resetPartToDefault('body');
+        this.resetPartToDefault('acc'); // ★
+
         const duration = 250;
+
+        // [무기] 크게 휘두르기
         if(this.parts.weapon) {
             this.scene.tweens.add({ 
                 targets: this.parts.weapon, 
@@ -579,16 +667,12 @@ update(dt) {
                 duration: duration, 
                 yoyo: true, 
                 ease: 'Cubic.easeIn',
-                onStart: () => {
-                    this.createWeaponTrail(); 
-                },
-                onComplete: () => {
-                    if (this.parts.weapon) {
-                        this.parts.weapon.setAngle(this.defaultPose.weapon.angle);
-                    }
-                }
+                onStart: () => { this.createWeaponTrail(); },
+                onComplete: () => { this.resetPartToDefault('weapon'); }
             }); 
         }
+
+        // [몸통] 힘껏 비틀기 (-20도 -> 30도)
         if(this.parts.body) {
             this.scene.tweens.add({
                 targets: this.parts.body,
@@ -596,15 +680,23 @@ update(dt) {
                 duration: duration,
                 yoyo: true,
                 onComplete: () => {
-                    if (this.parts.body) {
-                        this.parts.body.setAngle(this.defaultPose.body.angle);
-                    }
+                    this.resetPartToDefault('body');
                     this.startIdleAnim();
                 }
             });
         }
-    }
 
+        // ★ [장신구] 더 과장되게 비틀기 (-30도 -> 45도)
+        if(this.parts.acc) {
+            this.scene.tweens.add({
+                targets: this.parts.acc,
+                angle: { from: -30, to: 45 }, // 몸통보다 더 많이 꺾임 (역동성)
+                duration: duration,
+                yoyo: true,
+                onComplete: () => { this.resetPartToDefault('acc'); }
+            });
+        }
+    }
     createWeaponTrail() { return; }
 
     dealDamage(target) {
