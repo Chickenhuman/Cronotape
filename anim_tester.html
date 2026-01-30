@@ -2,8 +2,15 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Chrono Tape - SVG Visual Editor</title>
+    <title>Chrono Tape - SVG Visual Editor (Drag Enabled)</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    
+    <script src="js/data.js"></script>         
+    <script src="js/data/SVGdata.js"></script> 
+    <script src="js/managers/SVGManager.js"></script>
+    <script src="js/objects/Unit.js"></script>
+    <script src="js/objects/Projectile.js"></script>
+    
     <style>
         body { background: #1a1a1a; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; margin: 0; overflow: hidden; }
         
@@ -11,7 +18,7 @@
         #game-wrapper { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #222; position: relative; }
         #game-container { box-shadow: 0 0 30px rgba(0,0,0,0.5); border: 2px solid #444; position: relative; }
         
-        /* ★ 로딩 스크린 스타일 */
+        /* 로딩 스크린 */
         #loading-screen {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.9); z-index: 100;
@@ -19,37 +26,22 @@
             color: #00ffcc; font-size: 24px; font-weight: bold;
             transition: opacity 0.5s;
         }
-        .spinner {
-            width: 40px; height: 40px; border: 4px solid #333; border-top: 4px solid #00ffcc; border-radius: 50%;
-            margin-bottom: 20px; animation: spin 1s linear infinite;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        /* 오른쪽: 에디터 패널 */
-        #editor-panel { width: 350px; background: #2a2a2a; border-left: 1px solid #444; padding: 20px; display: flex; flex-direction: column; gap: 20px; box-shadow: -5px 0 15px rgba(0,0,0,0.3); z-index: 10; overflow-y: auto; }
+        /* 오른쪽: 컨트롤 패널 */
+        #controls { width: 320px; background: #2a2a2a; padding: 20px; border-left: 1px solid #444; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
+        h2 { margin: 0 0 10px 0; color: #00ffcc; font-size: 18px; border-bottom: 2px solid #444; padding-bottom: 5px; }
         
-        h2 { margin: 0 0 10px 0; font-size: 18px; color: #00ffcc; border-bottom: 2px solid #444; padding-bottom: 10px; }
-        h3 { margin: 0 0 5px 0; font-size: 14px; color: #aaa; }
-        
-        .info-card { background: #333; padding: 15px; border-radius: 8px; border: 1px solid #444; transition: 0.2s; }
-        .info-card.active { border-color: #00ffcc; background: #3a3a3a; box-shadow: 0 0 10px rgba(0, 255, 204, 0.1); }
-        
-        .coord-display { font-family: 'Consolas', monospace; font-size: 13px; color: #fff; background: #111; padding: 10px; border-radius: 4px; margin-top: 5px; border: 1px solid #555; cursor: pointer; position: relative; white-space: pre-wrap; line-height: 1.4; }
-        .coord-display:hover { background: #000; border-color: #888; }
-        .coord-display::after { content: "Click to Copy"; position: absolute; right: 5px; top: 10px; font-size: 10px; color: #666; display: none; }
-        .coord-display:hover::after { display: block; }
-
-        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        button { padding: 10px; background: #444; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; transition: 0.2s; }
+        .control-group { background: #333; padding: 10px; border-radius: 8px; }
+        label { display: block; margin-bottom: 5px; font-size: 13px; color: #aaa; }
+        select, button, input { width: 100%; padding: 8px; margin-bottom: 5px; background: #444; border: 1px solid #555; color: white; border-radius: 4px; cursor: pointer; }
         button:hover { background: #555; }
-        button:active { transform: translateY(1px); }
-        button.primary { background: #0066cc; }
-        button.danger { background: #cc3333; }
+        button:active { background: #00ffcc; color: black; }
+        
+        .anim-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+        .anim-btn { font-size: 12px; }
 
-        input[type=range] { width: 100%; margin: 10px 0; cursor: pointer; }
-        .val-label { float: right; color: #00ffcc; font-weight: bold; }
-
-        #status-msg { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: #00ffcc; padding: 10px 20px; border-radius: 20px; font-size: 14px; pointer-events: none; opacity: 0; transition: opacity 0.3s; z-index: 200; }
+        .zoom-controls { display: flex; gap: 5px; align-items: center; }
+        .zoom-val { width: 40px; text-align: center; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -57,242 +49,244 @@
     <div id="game-wrapper">
         <div id="game-container">
             <div id="loading-screen">
-                <div class="spinner"></div>
-                <div id="loading-text">리소스 생성 중...</div>
+                <div>🎨 텍스처 굽는 중...</div>
+                <div style="font-size: 14px; color: #888; margin-top: 10px;">잠시만 기다려주세요</div>
             </div>
         </div>
-        <div id="status-msg">코드 복사 완료!</div>
-    </div>
-
-    <div id="editor-panel">
-        <div>
-            <h2>🛠️ SVG Visual Editor</h2>
-            <p style="font-size: 12px; color: #888; margin-bottom: 20px;">
-                1. 드래그로 <b>위치(Offset)</b> 잡기<br>
-                2. 슬라이더로 <b>깊이(Depth)</b> 조절<br>
-                3. 버튼으로 <b>모션 확인</b>
-            </p>
-        </div>
-
-        <div id="part-info" class="info-card">
-            <h3>🎯 Selected Part</h3>
-            <div style="font-size: 12px; color: #aaa; margin-bottom: 5px;" id="part-name">파츠를 선택하세요</div>
-            
-            <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 10px;">
-                <label style="font-size:12px; color:#ddd;">Depth (Z-index) <span id="depth-val" class="val-label">0</span></label>
-                <input type="range" id="depth-slider" min="-50" max="50" step="1" value="0" oninput="updateDepth(this.value)">
-            </div>
-
-            <h3>Generated Code</h3>
-            <div class="coord-display" id="code-output" onclick="copyCode()">
-                (설정값 대기중)
-            </div>
-        </div>
-
-        <div class="info-card">
-            <h3>🎬 Animation Test</h3>
-            <div class="btn-group">
-                <button class="primary" onclick="playAnim('SWING')">⚔️ Swing</button>
-                <button class="primary" onclick="playAnim('HEAVY')">💪 Heavy</button>
-                <button class="primary" onclick="playAnim('STAB')">🗡️ Stab</button>
-                <button class="primary" onclick="playAnim('SHOOT')">🏹 Shoot</button>
-                <button class="primary" onclick="playAnim('CAST')">🔮 Cast</button>
-                <button class="danger" onclick="resetPose()">⏹ Reset</button>
-            </div>
-        </div>
-
-        <div class="info-card">
-            <h3>🛡️ Change Loadout</h3>
-            <div class="btn-group">
-                <button onclick="changeLoadout('weapon_sword', 'acc_shield')">기사 (방패)</button>
-                <button onclick="changeLoadout('weapon_greatsword', null)">광전사 (대검)</button>
-                <button onclick="changeLoadout('weapon_bow', null)">궁수 (활)</button>
-                <button onclick="changeLoadout('weapon_staff', 'acc_book')">마법사 (책)</button>
-                <button onclick="changeLoadout('weapon_dagger', null)">암살자 (단검)</button>
-            </div>
-        </div>
-        
-        <div class="info-card">
-            <h3>🔍 Zoom View</h3>
-            <input type="range" min="1" max="5" step="0.5" value="2.0" oninput="setZoom(this.value)">
+        <div style="margin-top: 10px; color: #666; font-size: 12px;">
+            🖱️ <b>파츠 드래그</b>: 위치 조정 | 휠: 줌 | 배경 드래그: 카메라 이동
         </div>
     </div>
 
-    <script src="js/data/data.js"></script>
-    <script src="js/data/SVGData.js"></script>
-    <script src="js/managers/SVGManager.js"></script>
-    <script src="js/objects/Unit.js"></script>
-    <script>
-        // 에디터용 더미 매니저 (공격 시 에러 방지)
-        class MockCombatManager {
-            showFanEffect() {} 
-            showFloatingText() {}
-            performAttack() {}
-        }
-    </script>
-
-    <script>
-        let game, unit, sceneRef;
-        let selectedSprite = null;
-
-        class EditorScene extends Phaser.Scene {
-            constructor() { super({ key: 'EditorScene' }); }
-
-            preload() {
-                // 더미 매니저 등록
-                this.combatManager = new MockCombatManager();
-            }
-
-            create() {
-                sceneRef = this;
-                this.svgManager = new SVGManager(this);
-                this.activeUnits = []; 
-                this.cameras.main.setBackgroundColor('#222');
-                this.cameras.main.setZoom(2.0);
-
-                this.drawGrid();
-
-                // 1. 모든 텍스처 미리 생성 요청
-                this.svgManager.prebakeAllTextures();
-
-                // 2. ★ [핵심] 텍스처 생성이 완료될 때까지 대기하는 타이머
-                this.loadCheckTimer = this.time.addEvent({
-                    delay: 100, // 0.1초마다 검사
-                    loop: true,
-                    callback: () => {
-                        // SVGManager의 pendingKeys가 0이면(작업 끝) 시작
-                        if (this.svgManager.pendingKeys.size === 0) {
-                            console.log("All Textures Loaded!");
-                            this.loadCheckTimer.remove(); // 타이머 중지
-                            
-                            // 로딩 화면 숨기기
-                            const screen = document.getElementById('loading-screen');
-                            screen.style.opacity = 0;
-                            setTimeout(() => screen.style.display = 'none', 500);
-
-                            // 유닛 소환
-                            this.spawnUnit('weapon_sword', 'acc_shield');
-                        }
-                    }
-                });
-
-                // 드래그 로직 (수정된 좌표계 적용)
-                this.input.on('drag', (pointer, gameObject, dragX, dragY) => {
-                    const targetPoint = new Phaser.Math.Vector2(pointer.worldX, pointer.worldY);
-                    const localPoint = unit.pointToContainer(targetPoint);
-                    
-                    gameObject.x = Math.round(localPoint.x);
-                    gameObject.y = Math.round(localPoint.y);
-if (unit.defaultPose && unit.defaultPose[gameObject.name]) {
-                        unit.defaultPose[gameObject.name].x = gameObject.x;
-                        unit.defaultPose[gameObject.name].y = gameObject.y;
-                    }
-
-                    updateUI(gameObject);
-                });
-                // 클릭 시 선택
-                this.input.on('gameobjectdown', (pointer, gameObject) => {
-                    selectPart(gameObject);
-                });
-            }
-
-            spawnUnit(weapon, acc) {
-                if (unit) unit.destroy();
-                // EditorUnit이라는 이름으로 생성하여 Unit.js 내부 로직 활용
-                const mockStats = { hp: 100, speed: 100, damage: 10, attackSpeed: 1, parts: { body: 'body_knight', weapon: weapon, acc: acc } };
-                
-                unit = new Unit(this, 400, 300, 'EditorUnit', 'ALLY', mockStats);
-                this.add.existing(unit);
-                
-                // 에디터 모드 활성화 (Unit.js가 있다면 참조할 수 있게)
-                unit.isEditorMode = true; 
-
-                // 파츠 인터랙티브 설정
-                if (unit.parts) {
-                    Object.entries(unit.parts).forEach(([name, sprite]) => {
-                        if (sprite) {
-                            sprite.setInteractive({ draggable: true, cursor: 'pointer' });
-                            sprite.name = name;
-                            sprite.dataKey = mockStats.parts[name]; 
-                            
-                            // SVGData 깊이값 적용
-                            if (typeof SVG_DATA !== 'undefined' && SVG_DATA[sprite.dataKey]) {
-                                const data = SVG_DATA[sprite.dataKey];
-                                if (data.depth) sprite.setDepth(data.depth);
-                            }
-                        }
-                    });
-                }
-                unit.removeInteractive(); 
-                // 깊이 정렬
-                unit.sort('depth');
-                resetUI();
-            }
-
-            drawGrid() {
-                const g = this.add.graphics();
-                g.lineStyle(2, 0x00ff00, 0.5); 
-                g.moveTo(400, 0); g.lineTo(400, 600);
-                g.moveTo(0, 300); g.lineTo(800, 300);
-                g.strokePath();
-            }
-        }
-
-        // ================= UI Logic =================
+    <div id="controls">
+        <h2>Visual Editor</h2>
         
-        function selectPart(sprite) {
-            selectedSprite = sprite;
-            if (unit && unit.parts) Object.values(unit.parts).forEach(p => p.clearTint());
-            sprite.setTint(0x00ffff);
-            document.getElementById('depth-slider').value = sprite.depth;
-            updateUI(sprite);
-        }
+        <div class="control-group">
+            <label>Unit Base (Stats)</label>
+            <select id="unit-select" onchange="changeUnitBase(this.value)"></select>
+        </div>
 
-        function updateDepth(val) {
-            if (selectedSprite) {
-                selectedSprite.setDepth(parseInt(val));
-                if (unit) unit.sort('depth'); // 즉시 정렬
-                updateUI(selectedSprite);
+        <div class="control-group">
+            <label>Parts Config</label>
+            <label>Body</label>
+            <select id="part-body" onchange="updateParts()"></select>
+            
+            <label>Weapon</label>
+            <select id="part-weapon" onchange="updateParts()"></select>
+            
+            <label>Accessory</label>
+            <select id="part-acc" onchange="updateParts()"></select>
+        </div>
+
+        <div class="control-group">
+            <label>Animations</label>
+            <div class="anim-grid">
+                <button class="anim-btn" onclick="playAnim('SWING')">Swing</button>
+                <button class="anim-btn" onclick="playAnim('HEAVY')">Heavy</button>
+                <button class="anim-btn" onclick="playAnim('STAB')">Stab</button>
+                <button class="anim-btn" onclick="playAnim('SHOOT')">Shoot</button>
+                <button class="anim-btn" onclick="playAnim('CAST')">Cast</button>
+                <button class="anim-btn" onclick="resetPose()" style="background:#552222">Reset Pose</button>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label>View Options</label>
+            <div class="zoom-controls">
+                <span>Zoom:</span>
+                <input type="range" min="0.5" max="3.0" step="0.1" value="1.5" oninput="setZoom(this.value)">
+                <span id="zoom-text" class="zoom-val">1.5x</span>
+            </div>
+            <br>
+            <button onclick="toggleTeam()">Toggle Team (ALLY/ENEMY)</button>
+        </div>
+    </div>
+
+    <script>
+        // 전역 설정
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            parent: 'game-container',
+            backgroundColor: '#222222',
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            },
+            physics: {
+                default: 'arcade',
+                arcade: { debug: true }
             }
-        }
+        };
 
-        function updateUI(sprite) {
-            if (!sprite) return;
-            const key = sprite.dataKey || "unknown";
+        let game = new Phaser.Game(config);
+        let sceneRef = null;
+        let unit = null;
+        let currentTeam = 'ALLY';
+        let currentUnitName = '검사';
+        let coordText = null; // 좌표 표시용 텍스트
+
+        window.onload = function() {
+            // 유닛 목록 채우기
+            const unitSelect = document.getElementById('unit-select');
+            if (typeof UNIT_STATS !== 'undefined') {
+                Object.keys(UNIT_STATS).forEach(key => {
+                    const opt = document.createElement('option');
+                    opt.value = key;
+                    opt.innerText = key;
+                    unitSelect.appendChild(opt);
+                });
+                unitSelect.value = '검사';
+            }
+
+            // 파츠 목록 채우기
+            const parts = { body: [], weapon: [], acc: [] };
+            if (typeof SVG_DATA !== 'undefined') {
+                Object.keys(SVG_DATA).forEach(key => {
+                    if (key.startsWith('body_')) parts.body.push(key);
+                    else if (key.startsWith('weapon_')) parts.weapon.push(key);
+                    else if (key.startsWith('acc_')) parts.acc.push(key);
+                });
+            }
             
-            document.getElementById('part-name').innerText = `${sprite.name.toUpperCase()} (${key})`;
-            document.querySelector('.info-card').classList.add('active');
-            document.getElementById('depth-val').innerText = sprite.depth;
-
-            let code = `offset: { x: ${Math.round(sprite.x)}, y: ${Math.round(sprite.y)} },`;
-            if (sprite.depth !== 0) code += `\ndepth: ${sprite.depth},`;
-            
-            document.getElementById('code-output').innerText = code;
-        }
-
-        function resetUI() {
-            document.getElementById('part-name').innerText = "파츠를 선택하세요";
-            document.getElementById('code-output').innerText = "(대기중)";
-            document.querySelector('.info-card').classList.remove('active');
-            selectedSprite = null;
-        }
-
-        function copyCode() {
-            const text = document.getElementById('code-output').innerText;
-            if (text.includes("대기중")) return;
-            navigator.clipboard.writeText(text).then(() => {
-                const msg = document.getElementById('status-msg');
-                msg.style.opacity = 1;
-                setTimeout(() => msg.style.opacity = 0, 2000);
+            ['body', 'weapon', 'acc'].forEach(type => {
+                const sel = document.getElementById(`part-${type}`);
+                const none = document.createElement('option');
+                none.value = ''; none.innerText = '(None)';
+                sel.appendChild(none);
+                parts[type].forEach(key => {
+                    const opt = document.createElement('option');
+                    opt.value = key;
+                    opt.innerText = key;
+                    sel.appendChild(opt);
+                });
             });
+        };
+
+        function preload() {}
+
+        function create() {
+            sceneRef = this;
+            
+            // 격자 및 중심선
+            this.add.grid(400, 300, 800, 600, 40, 40, 0x000000, 0, 0x333333, 0.5);
+            this.add.line(0, 0, 400, 0, 400, 600, 0x00ffcc, 0.3).setOrigin(0);
+            this.add.line(0, 0, 0, 300, 800, 300, 0x00ffcc, 0.3).setOrigin(0);
+
+            // ★ [좌표 표시 UI]
+            coordText = this.add.text(10, 10, '파츠를 드래그하여 좌표 확인', { 
+                font: '16px monospace', fill: '#00ff00', backgroundColor: '#000000aa', padding: { x: 5, y: 5 } 
+            }).setScrollFactor(0).setDepth(1000);
+
+            // ★ [드래그 이벤트 핸들러]
+            this.input.on('dragstart', (pointer, gameObject) => {
+                gameObject.setTint(0xffff00); // 선택된 파츠 노란색으로 표시
+                updateCoordInfo(gameObject);
+            });
+
+            this.input.on('drag', (pointer, gameObject, dragX, dragY) => {
+                // 줌 비율을 고려한 델타 이동 (컨테이너 내부 좌표 유지)
+                const dx = (pointer.x - pointer.prevPosition.x) / this.cameras.main.zoom;
+                const dy = (pointer.y - pointer.prevPosition.y) / this.cameras.main.zoom;
+                
+                gameObject.x += dx;
+                gameObject.y += dy;
+                
+                updateCoordInfo(gameObject);
+            });
+
+            this.input.on('dragend', (pointer, gameObject) => {
+                gameObject.clearTint();
+                // 콘솔에 복사하기 좋게 출력
+                console.log(`✅ [${gameObject.partKey}] Final Offset: { x: ${Math.round(gameObject.x)}, y: ${Math.round(gameObject.y)} }`);
+            });
+
+            // 배경 드래그 시 카메라 이동
+            this.input.on('pointermove', (p) => {
+                if (p.isDown && sceneRef.input.getDragState(p) === 0) { // 파츠 드래그 중이 아닐 때만
+                    this.cameras.main.scrollX -= (p.x - p.prevPosition.x) / this.cameras.main.zoom;
+                    this.cameras.main.scrollY -= (p.y - p.prevPosition.y) / this.cameras.main.zoom;
+                }
+            });
+
+            // SVG 굽기 시작
+            this.svgManager = new SVGManager(this);
+            this.svgManager.prebakeAllTextures(() => {
+                const loading = document.getElementById('loading-screen');
+                if(loading) loading.style.opacity = 0;
+                setTimeout(() => { if(loading) loading.style.display = 'none'; }, 500);
+                spawnUnit();
+            });
+
+            this.cameras.main.setZoom(1.5);
         }
 
-        // ★ 애니메이션 재생 기능
+        function update() {
+            if (unit) unit.update(0.016);
+        }
+
+        function updateCoordInfo(part) {
+            if (coordText) {
+                const x = Math.round(part.x);
+                const y = Math.round(part.y);
+                coordText.setText(`[${part.partKey}] x: ${x}, y: ${y}`);
+            }
+        }
+
+        function spawnUnit() {
+            if (unit) unit.destroy();
+            if (!sceneRef) return;
+
+            const baseStats = UNIT_STATS[currentUnitName];
+            
+            const customParts = {};
+            const b = document.getElementById('part-body').value;
+            const w = document.getElementById('part-weapon').value;
+            const a = document.getElementById('part-acc').value;
+
+            if (b) customParts.body = b;
+            if (w) customParts.weapon = w;
+            if (a) customParts.acc = a;
+            
+            const finalStats = JSON.parse(JSON.stringify(baseStats));
+            finalStats.parts = { ...finalStats.parts, ...customParts };
+
+            unit = new Unit(sceneRef, 400, 300, currentUnitName, currentTeam, finalStats);
+            
+            // ★ [드래그 기능 활성화] 생성된 파츠들에 인터랙티브 설정
+            if (unit.parts) {
+                Object.keys(unit.parts).forEach(key => {
+                    const part = unit.parts[key];
+                    part.setInteractive({ draggable: true, pixelPerfect: true }); // pixelPerfect로 정밀한 선택
+                    part.partKey = key; // 식별자 저장 (body, weapon 등)
+                });
+            }
+
+            if (!b && finalStats.parts.body) document.getElementById('part-body').value = finalStats.parts.body;
+            if (!w && finalStats.parts.weapon) document.getElementById('part-weapon').value = finalStats.parts.weapon;
+            if (!a && finalStats.parts.acc) document.getElementById('part-acc').value = finalStats.parts.acc;
+        }
+
+        function changeUnitBase(name) {
+            currentUnitName = name;
+            document.getElementById('part-body').value = '';
+            document.getElementById('part-weapon').value = '';
+            document.getElementById('part-acc').value = '';
+            spawnUnit();
+        }
+
+        function updateParts() { spawnUnit(); }
+        
+        function toggleTeam() {
+            currentTeam = (currentTeam === 'ALLY') ? 'ENEMY' : 'ALLY';
+            spawnUnit();
+        }
+
         function playAnim(type) {
             if (!unit) return;
             console.log("Playing Anim:", type);
-            
-            // Unit.js의 애니메이션 함수 호출
             switch(type) {
                 case 'SWING': unit.playSwingAnim(); break;
                 case 'HEAVY': unit.playHeavySwingAnim(); break;
@@ -304,24 +298,13 @@ if (unit.defaultPose && unit.defaultPose[gameObject.name]) {
 
         function resetPose() {
             if (!unit) return;
-            // 모든 트윈 중지 및 아이들링 복귀
-            unit.scene.tweens.killTweensOf(unit.parts.weapon);
-            if(unit.parts.body) unit.scene.tweens.killTweensOf(unit.parts.body);
-            
-            // 위치가 튈 수 있으므로 재소환이 가장 깔끔함
-            // 하지만 편집 중인 위치 유지를 위해 idle만 호출
-            unit.startIdleAnim();
+            spawnUnit(); 
         }
 
-        function changeLoadout(w, a) { if (sceneRef) sceneRef.spawnUnit(w, a); }
-        function setZoom(val) { if (sceneRef) sceneRef.cameras.main.setZoom(parseFloat(val)); }
-
-        const config = {
-            type: Phaser.AUTO, width: 800, height: 600, parent: 'game-container',
-            scene: EditorScene, backgroundColor: '#222',
-            physics: { default: 'arcade', arcade: { debug: false } }
-        };
-        game = new Phaser.Game(config);
+        function setZoom(val) {
+            if (sceneRef) sceneRef.cameras.main.setZoom(parseFloat(val));
+            document.getElementById('zoom-text').innerText = val + "x";
+        }
     </script>
 </body>
 </html>
