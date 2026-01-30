@@ -205,4 +205,23 @@ class GameLogic {
         if (!this.isValidCoord(tx, ty, grid)) return false;
         return grid[ty][tx] !== 1; 
     }
+    // ============================================================
+    // ★ [신규 추가] 유닛 소환 위치 분산 (오프셋) 계산
+    // ============================================================
+    static getSpawnOffsets(count, spread = 30) {
+        const offsets = [];
+        for (let i = 0; i < count; i++) {
+            if (i === 0) {
+                // 첫 번째 유닛은 정확한 위치에
+                offsets.push({ x: 0, y: 0 });
+            } else {
+                // 나머지는 랜덤하게 흩뿌리기
+                offsets.push({
+                    x: (Math.random() - 0.5) * spread,
+                    y: (Math.random() - 0.5) * spread
+                });
+            }
+        }
+        return offsets;
+    }
 }

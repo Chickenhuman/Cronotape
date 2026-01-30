@@ -1340,20 +1340,33 @@ fireCommanderSkill(target, cmd) {
         this.skillGraphics.strokePath();
     }
     // [신규 기능] 현재 슬라이더 시간(Ghost Time)에 따른 실시간 코스트 계산
+// [수정된 함수] 현재 슬라이더 시간(타임라인)에 따른 실시간 코스트 계산
     getRealTimeCost(unitName) {
+        // 1. 유닛 데이터 확인
         const stat = UNIT_STATS[unitName];
         if (!stat) return 0;
 
         let finalCost = stat.cost;
 
-        // GhostSimulator가 있고, 보너스 타임 설정이 있는 경우 체크
-        if (this.ghostSimulator && stat.bonusTime) {
-            const currentTime = this.ghostSimulator.currentTime; // 슬라이더 시간 (초 단위)
-            const [start, end] = stat.bonusTime;
+        // 2. 보너스 타임 설정이 있는 경우에만 시간 체크
+        if (stat.bonusTime) {
+            let currentTime = 0;
 
-            // 현재 시간이 보너스 구간(예: 0~3초)에 포함되는지 확인
+            if (this.isPlaying) {
+                // (A) 전투 중일 때는 실제 전투 시간 사용
+                currentTime = this.battleTime;
+            } else {
+                // (B) 작전 중일 때는 슬라이더 값(0~1000)을 초 단위(0~10.0)로 변환하여 사용
+                const slider = document.getElementById('timeline-slider');
+                if (slider) {
+                    currentTime = parseFloat(slider.value) / 100;
+                }
+            }
+
+            // 3. 현재 시간이 보너스 구간에 포함되는지 확인
+            const [start, end] = stat.bonusTime;
             if (currentTime >= start && currentTime <= end) {
-                // 보너스 효과 적용 (현재는 'cost' 감소만 처리)
+                // 코스트 관련 효과가 있다면 적용
                 if (stat.bonusEffect && stat.bonusEffect.stat === 'cost') {
                     finalCost += stat.bonusEffect.val; // 예: 3 + (-1) = 2
                 }

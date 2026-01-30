@@ -400,15 +400,19 @@ class CardDeckManager {
         }
         
         // [2] 파일명 및 경로 자동 매칭
-        let fileName = name;
-        if (finalStat.image) fileName = finalStat.image.replace('img_', '');
-        
-        const fileMapper = {
-            '검사': 'swordman', '궁수': 'archer', '힐러': 'healer', '방벽': 'wall',
-            '화염구': 'fireball', '돌멩이': 'stone', '방어막': 'shield', '얼음': 'ice',
-            '암살자': 'assassin', '적군': 'enemy'
-        };
-        if (fileMapper[name]) fileName = fileMapper[name];
+// ★ [수정] 하드코딩(fileMapper) 삭제 및 데이터 기반 자동 매칭
+        let fileName = 'noimg'; // 기본값 (이미지 없을 때)
+
+        if (finalStat.image) {
+            // 예: 'img_swordman' -> 'swordman'
+            // 예: 'img_fireball' -> 'fireball'
+            fileName = finalStat.image.replace('img_', '');
+        } else {
+            // 데이터에 image 필드가 없는 경우, 영어 이름 변환 로직이 필요하거나
+            // 임시로 이름을 그대로 파일명으로 쓸 수도 있습니다.
+            // 하지만 가장 좋은 건 data.js의 UNIT_STATS에 'image' 속성을 빠짐없이 넣는 것입니다.
+            console.warn(`[CardDeckManager] ${name}의 이미지 정보가 없습니다.`);
+        }
         
         const imgPath = `assets/chars/${fileName}.png`; 
         const frameClass = (type === 'Unit') ? 'frame-unit' : 'frame-skill';

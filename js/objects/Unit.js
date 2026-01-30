@@ -1,7 +1,7 @@
 // js/objects/Unit.js
 
 class Unit extends Phaser.GameObjects.Container {
-    constructor(scene, x, y, name, team, stats) {
+   constructor(scene, x, y, name, team, stats) {
         super(scene, x, y);
         this.scene = scene;
         this.name = name;
@@ -14,88 +14,82 @@ class Unit extends Phaser.GameObjects.Container {
         this.body.setOffset(-15, -15); 
 
         // ------------------------------------------------------------
-        // 🧬 [파츠 조립 시스템]
+        // 🧬 [파츠 조립 시스템] (자동화 적용 완료)
         // ------------------------------------------------------------
         this.parts = {};
         
+        // 기본 파츠 설정 (데이터에 없으면 기사 셋으로)
         const defaultParts = { 
             body: 'body_knight', 
             weapon: 'weapon_sword', 
             acc: 'acc_shield' 
         };
+        // 실제 데이터와 병합 (예: { body:..., weapon:..., wings:... })
         const partConfig = { ...defaultParts, ...(stats.parts || {}) };
 
-        // 1. 액세서리
-        if (partConfig.acc) {
-            const key = `${partConfig.acc}_${team}`;
-            const accData = (typeof SVG_DATA !== 'undefined') ? SVG_DATA[partConfig.acc] : null;
-            const defaultOffset = { x: 10, y: 5 };
-            const offset = (accData && accData.offset) ? accData.offset : defaultOffset;
+        // ★ [핵심 수정] 반복문으로 모든 파츠 자동 조립
+        Object.keys(partConfig).forEach(partName => {
+            const textureKey = partConfig[partName];
+            if (!textureKey) return;
 
-            this.parts.acc = scene.add.sprite(offset.x, offset.y, key);
-            this.parts.acc.setDisplaySize(30, 30);
-            
-            if (accData && accData.depth) {
-                this.parts.acc.setDepth(accData.depth);
-            }
-            this.add(this.parts.acc);
-        }
+            // 1. 텍스처 키 결정 (무기는 팀 색상 X, 나머지는 팀 색상 O 규칙 적용)
+            const isNeutral = (partName === 'weapon'); 
+            const finalKey = isNeutral ? textureKey : `${textureKey}_${team}`;
 
-        // 2. 몸통
-        if (partConfig.body) {
-            const key = `${partConfig.body}_${team}`;
+            // 2. 스프라이트 생성
+            const sprite = scene.add.sprite(0, 0, finalKey);
             
-            this.parts.body = scene.add.sprite(0, 0, key);
-            
-            if (this.stats.isStructure && name.includes('Base')) {
-                 this.parts.body.setDisplaySize(100, 120);
-                 this.parts.body.setOrigin(0.5, 1.0); 
-                 this.parts.body.y = 0;
-            } else {
-                 this.parts.body.setDisplaySize(40, 40);
-                 this.parts.body.setOrigin(0.5, 0.9); 
-                 this.parts.body.y = 15; 
-            }
-            
-            this.add(this.parts.body);
-        }
+            // 3. 기본 크기 및 위치 조정
+            sprite.setDisplaySize(40, 40);
+            sprite.setOrigin(0.5, 0.9);
+            sprite.y = 15;
 
-        // 3. 무기
-        if (partConfig.weapon) {
-            const key = `${partConfig.weapon}`; 
-            
-            this.parts.weapon = scene.add.sprite(0, 0, key);
-            this.parts.weapon.setDisplaySize(35, 35);
-
-            this.parts.weapon.setOrigin(0.5, 0.9); 
-            
-            const weaponData = (typeof SVG_DATA !== 'undefined') ? SVG_DATA[partConfig.weapon] : null;
-            const wOffset = (weaponData && weaponData.offset) ? weaponData.offset : { x: 18, y: 10 };
-            this.parts.weapon.setPosition(wOffset.x, wOffset.y);
-
-            if (weaponData && weaponData.depth) {
-                this.parts.weapon.setDepth(weaponData.depth);
+            // 4. SVG_DATA의 오프셋/Depth 정보 적용 (데이터 주도형)
+            const svgData = (typeof SVG_DATA !== 'undefined') ? SVG_DATA[textureKey] : null;
+            if (svgData) {
+                if (svgData.offset) sprite.setPosition(svgData.offset.x, svgData.offset.y);
+                if (svgData.depth) sprite.setDepth(svgData.depth);
             }
 
-            this.add(this.parts.weapon);
-        }
+            // [특수 예외] 무기(weapon)는 위치/크기 보정
+            if (partName === 'weapon') {
+                sprite.setDisplaySize(35, 35);
+                const wOffset = (svgData && svgData.offset) ? svgData.offset : { x: 18, y: 10 };
+                sprite.setPosition(wOffset.x, wOffset.y);
+            }
+            
+            // [특수 예외] 기지(Base)는 크기가 큼
+            if (stats.isStructure && name.includes('Base') && partName === 'body') {
+                 sprite.setDisplaySize(100, 120);
+                 sprite.setOrigin(0.5, 1.0); 
+                 sprite.y = 0;
+            }
 
-        // 구조물 처리
+            // 컨테이너에 추가 및 참조 저장
+            this.add(sprite);
+            this.parts[partName] = sprite;
+        });
+
+        // ★ [중요] 기존 애니메이션 코드와의 호환성을 위해 참조 연결
+        // (날개나 망토는 애니메이션 안 해도 되지만, 몸통/무기는 움직여야 하므로)
+        this.bodySprite = this.parts.body;
+        this.weaponSprite = this.parts.weapon;
+        
+        // 기본 포즈 저장 (애니메이션 복귀용)
+        this.defaultPose = {};
+        Object.keys(this.parts).forEach(key => {
+            const p = this.parts[key];
+            this.defaultPose[key] = { x: p.x, y: p.y, angle: p.angle, scaleX: p.scaleX, scaleY: p.scaleY };
+        });
+
+        // 구조물 고정
         if (stats.isStructure) {
             this.body.setImmovable(true); 
             this.body.moves = false;      
         }
-        
-        this.bodySprite = this.parts.body;
-        this.weaponSprite = this.parts.weapon;
-        
-        this.defaultPose = {
-            body: { x: this.parts.body ? this.parts.body.x : 0, y: this.parts.body ? this.parts.body.y : 0, angle: 0 },
-            weapon: { x: this.parts.weapon ? this.parts.weapon.x : 0, y: this.parts.weapon ? this.parts.weapon.y : 0, angle: 0 }
-        };
 
         // ------------------------------------------------------------
-        // ⚔️ 전투 변수 초기화
+        // ⚔️ 전투 변수 초기화 (기존 코드 유지)
         // ------------------------------------------------------------
         this.currentHp = stats.hp;
         this.active = true;
@@ -105,7 +99,7 @@ class Unit extends Phaser.GameObjects.Container {
         this.attackCooldown = 0;
         this.isCasting = false;
         this.castTimer = 0;
-        this.maxCastTime = 0;
+        this.maxCastTime = stats.castTime || 0; // 캐스팅 시간
         this.isStealthed = (stats.traits && stats.traits.includes("은신"));
         this.pathTimer = 0; 
         this.isSpawned = true;
@@ -116,21 +110,19 @@ class Unit extends Phaser.GameObjects.Container {
         this.attackSpeed = stats.attackSpeed;
         this.race = stats.race;
         
-        // ------------------------------------------------------------
-        // 2. 체력바 (통합 관리) - 텍스트 제거됨
-        // ------------------------------------------------------------
-         this.isHovered = false; // 마우스 오버 상태 추적
-        this.initHpBar();       // 체력바 초기화 메서드 호출
+        // 체력바 초기화
+        this.isHovered = false; 
+        this.initHpBar();       
 
         scene.add.existing(this); 
         this.setInteractive(new Phaser.Geom.Circle(0, 0, 25), Phaser.Geom.Circle.Contains);
 
+        // 툴팁 이벤트
         this.on('pointerover', () => {
             if (this.active && this.scene.uiManager) {
                 this.scene.uiManager.showUnitTooltip(this);
             }
         });
-
         this.on('pointerout', () => {
             if (this.scene.uiManager) {
                 this.scene.uiManager.hideUnitTooltip();
@@ -140,7 +132,7 @@ class Unit extends Phaser.GameObjects.Container {
         this.sort('depth');
         this.startIdleAnim();
     }
-
+    
     startIdleAnim() {
         if (!this.active || !this.scene) return;
         const randomDelay = Math.random() * 1000;

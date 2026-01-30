@@ -1,19 +1,24 @@
 // js/managers/ArtifactManager.js
 
-// ★ 유물 데이터 정의
+// ★ 유물 데이터 정의 (수치 데이터화 완료)
 const ARTIFACT_DATA = {
     // === [전설: Gold] ===
     'gunpowder': {
         name: '불안정한 화약통',
         desc: '아군 [보병] 사망 시\n주변 모든 유닛에게 30 피해',
         rarity: 'LEGENDARY',
-        image: 'art_gunpowder'
+        image: 'art_gunpowder',
+        val: 30,       // 폭발 데미지
+        radius: 50     // 폭발 반경
     },
     'turret': {
         name: '자동 방어 포탑',
         desc: '기지에 포탑 설치.\n5초마다 적에게 포격 (15 피해)',
         rarity: 'LEGENDARY',
-        image: 'art_turret'
+        image: 'art_turret',
+        val: 15,       // 포격 데미지
+        cooldown: 5.0, // 발사 간격
+        range: 600     // 사거리 (신규 추가)
     },
 
     // === [에픽: Purple] ===
@@ -21,13 +26,15 @@ const ARTIFACT_DATA = {
         name: '흡혈의 송곳니',
         desc: '물리 공격 시\n피해량의 20% 체력 회복',
         rarity: 'EPIC',
-        image: 'art_vampire'
+        image: 'art_vampire',
+        val: 0.2       // 흡혈율 (20%)
     },
     'thorn': {
         name: '가시 갑옷',
         desc: '근접 피격 시\n공격자에게 5 고정 피해',
         rarity: 'EPIC',
-        image: 'art_thorn'
+        image: 'art_thorn',
+        val: 5         // 반사 데미지
     },
 
     // === [희귀: Green] ===
@@ -35,13 +42,15 @@ const ARTIFACT_DATA = {
         name: '황금 밸브',
         desc: '라운드 시작 시\n코스트 +2 획득',
         rarity: 'RARE',
-        image: 'art_valve'
+        image: 'art_valve',
+        val: 2         // 획득 코스트
     },
     'recycler': {
         name: '고철 회수기',
         desc: '아군 [구조물] 파괴 시\n코스트 1 회복',
         rarity: 'RARE',
-        image: 'art_recycler'
+        image: 'art_recycler',
+        val: 1         // 회복 코스트
     }
 };
 
@@ -54,37 +63,25 @@ const RARITY_COLORS = {
 class ArtifactManager {
     constructor(scene) {
         this.scene = scene;
-        
-        // ★ [수정] 로컬 배열이 아니라 전역 데이터 참조
-        // this.inventory = []; (삭제)
-        // this.inventory는 이제 GAME_DATA.artifacts를 바라보게 하거나,
-        // 매번 동기화해야 합니다. 여기서는 편의상 getter나 init에서 동기화합니다.
-        
         this.turretCooldown = 0;
         this.uiContainer = null;
     }
 
     init() {
         this.createUI();
-        this.updateUI(); // UI 갱신
+        this.updateUI(); 
         this.setupEditor();
     }
     
-    // [추가] 인벤토리 접근을 위한 Getter
     get inventory() {
         return GAME_DATA.artifacts;
     }
 
-// js/managers/ArtifactManager.js 내부
-
     addArtifact(key) {
-        // [1] 중복 체크
         if (this.hasArtifact(key)) {
             const refundGold = 100;
             GAME_DATA.addGold(refundGold);
-            
             this.scene.addLog(`중복 유물 반환: ${ARTIFACT_DATA[key].name} -> ${refundGold}G`, "log-gold");
-            
             if (this.scene.showFloatingText) {
                 this.scene.showFloatingText(
                     this.scene.scale.width/2, 
@@ -94,41 +91,23 @@ class ArtifactManager {
                 );
             }
             if (this.scene.updateUI) this.scene.updateUI();
-
-            // ★ [수정] 중복이었음을 알려주는 반환값
             return { success: false, reason: 'DUPLICATE', refund: refundGold }; 
         }
 
-        // [2] 정상 획득
         GAME_DATA.addArtifact(key);
         this.scene.addLog(`유물 획득: ${ARTIFACT_DATA[key].name}`, "log-green");
-        
-        // 사운드 등...
         this.updateUI();
-
-        // ★ [수정] 성공했음을 알려주는 반환값
         return { success: true, item: ARTIFACT_DATA[key].name };
     }
 
-    // 미보유 유물 중에서 랜덤으로 1개 키(key) 반환
     getRandomArtifactKey() {
-        // 전체 유물 목록
         const allKeys = Object.keys(ARTIFACT_DATA);
-        
-        // 현재 내가 가진 유물 목록 (Getter 활용)
         const owned = this.inventory;
-
-        // [필터링] 전체 - 보유 = 획득 가능 목록
         const available = allKeys.filter(key => !owned.includes(key));
-
-        // 획득 가능한 게 없으면 (모든 유물 수집 완료) null 반환
         if (available.length === 0) return null;
-
-        // 랜덤 선택
         return available[Math.floor(Math.random() * available.length)];
     }
 
-    // 유물 제거 (에디터용)
     removeArtifact(key) {
         const idx = this.inventory.indexOf(key);
         if (idx > -1) {
@@ -143,16 +122,19 @@ class ArtifactManager {
     }
 
     // ====================================================
-    // ★ [핵심] 게임 플레이 훅 (Hook) - BattleScene에서 호출됨
+    // ★ [핵심] 게임 플레이 훅 (Hook)
     // ====================================================
 
     update(dt) {
         // [전설] 자동 방어 포탑 로직
         if (this.hasArtifact('turret')) {
+            const data = ARTIFACT_DATA['turret'];
             this.turretCooldown -= dt;
+            
+            // 데이터의 쿨타임 사용
             if (this.turretCooldown <= 0) {
-                this.fireTurret();
-                this.turretCooldown = 5.0; // 5초 쿨타임
+                this.fireTurret(data);
+                this.turretCooldown = data.cooldown; 
             }
         }
     }
@@ -160,131 +142,135 @@ class ArtifactManager {
     onUnitDeath(unit) {
         // [전설] 불안정한 화약통 (시체 폭발)
         if (this.hasArtifact('gunpowder') && unit.team === 'ALLY' && unit.stats.race === '보병') {
-            this.triggerExplosion(unit);
+            // 데이터 전달
+            this.triggerExplosion(unit, ARTIFACT_DATA['gunpowder']);
         }
 
         // [희귀] 고철 회수기
         if (this.hasArtifact('recycler') && unit.team === 'ALLY' && unit.stats.race === '구조물') {
-            this.scene.playerCost += 1;
+            const data = ARTIFACT_DATA['recycler'];
+            this.scene.playerCost += data.val;
             this.scene.updateCostUI();
-            this.scene.showFloatingText(unit.x, unit.y, "+1 Cost", '#ffff00');
+            this.scene.showFloatingText(unit.x, unit.y, `+${data.val} Cost`, '#ffff00');
         }
     }
 
     onRoundStart() {
         // [희귀] 황금 밸브
         if (this.hasArtifact('valve')) {
-            this.scene.playerCost += 2;
+            const data = ARTIFACT_DATA['valve'];
+            this.scene.playerCost += data.val;
             this.scene.updateCostUI();
-            this.scene.addLog("황금 밸브: 코스트 +2");
+            this.scene.addLog(`${data.name}: 코스트 +${data.val}`);
         }
     }
 
     onDealDamage(attacker, target, damageAmount) {
         // [에픽] 흡혈의 송곳니
         if (this.hasArtifact('vampire') && attacker.team === 'ALLY') {
-            const heal = Math.floor(damageAmount * 0.2);
+            const data = ARTIFACT_DATA['vampire'];
+            const heal = Math.floor(damageAmount * data.val);
             if (heal > 0) {
                 attacker.currentHp = Math.min(attacker.currentHp + heal, attacker.stats.hp);
-                // (선택) 힐 텍스트 띄우기
+            }
+        }
+        
+        // ★ [추가] 가시 갑옷 (피격 시 반사 데미지)
+        // 주의: 이 함수는 onDealDamage이므로 attacker가 때린 상황임.
+        // target이 '가시 갑옷'을 가지고 있다면 attacker에게 데미지를 줘야 함.
+        if (this.hasArtifact('thorn') && target.team === 'ALLY') {
+            const data = ARTIFACT_DATA['thorn'];
+            // 근접 공격인지 확인 (거리가 60 이하일 때 등으로 판단하거나 attackType 확인)
+            const dist = Phaser.Math.Distance.Between(attacker.x, attacker.y, target.x, target.y);
+            if (dist <= 60) {
+                 this.scene.applyDamage({scene: this.scene}, attacker, data.val);
+                 // 시각 효과 (선택)
+                 // this.scene.showFloatingText(attacker.x, attacker.y, `-${data.val}`, '#ffffff');
             }
         }
     }
 
     // ====================================================
-    // ★ 개별 유물 구현부
+    // ★ 개별 유물 구현부 (데이터 주도형으로 변경됨)
     // ====================================================
 
-triggerExplosion(unit) {
+    triggerExplosion(unit, data) {
+        const radius = data.radius || 50;
+        const damage = data.val || 30;
+
         // 시각 효과
-        this.scene.createExplosion(unit.x, unit.y, 50, 0xffaa00);
+        this.scene.createExplosion(unit.x, unit.y, radius, 0xffaa00);
         
         // 범위 데미지
         this.scene.activeUnits.forEach(target => {
             if (!target.active) return;
-
-            // ★ [추가] 자기 자신은 폭발 데미지 면제 (이게 없으면 무한루프)
             if (target === unit) return; 
 
             const dist = Phaser.Math.Distance.Between(unit.x, unit.y, target.x, target.y);
-            if (dist <= 50) {
-                this.scene.applyDamage({scene: this.scene}, target, 30);
+            if (dist <= radius) {
+                this.scene.applyDamage({scene: this.scene}, target, damage);
             }
         });
-        this.scene.addLog("화약통 폭발!", "log-red");
+        this.scene.addLog(`${data.name} 폭발!`, "log-red");
     }
-    fireTurret() {
+
+    fireTurret(data) {
         const base = this.scene.activeUnits.find(u => u.isBase && u.team === 'ALLY');
         if (!base) return;
 
         // 가장 가까운 적 찾기
-        const target = this.scene.findNearestEnemy(); // BattleScene의 함수 활용
+        const target = this.scene.findNearestEnemy(); 
         if (target) {
-            // 투사체 발사 (데미지 15)
-            const dummyOwner = {
-                x: base.x, y: base.y,
-                stats: { damage: 15, projectileSpeed: 400, color: 0x00ffff }
-            };
-            if (typeof Projectile !== 'undefined') {
-                const proj = new Projectile(this.scene, dummyOwner, target);
-                this.scene.activeProjectiles.push(proj);
+            // 사거리 체크 (데이터 활용)
+            const dist = Phaser.Math.Distance.Between(base.x, base.y, target.x, target.y);
+            const range = data.range || 9999;
+            
+            if (dist <= range) {
+                // 투사체 발사
+                const dummyOwner = {
+                    x: base.x, y: base.y,
+                    stats: { damage: data.val, projectileSpeed: 400, color: 0x00ffff }
+                };
+                if (typeof Projectile !== 'undefined') {
+                    const proj = new Projectile(this.scene, dummyOwner, target);
+                    this.scene.activeProjectiles.push(proj);
+                }
             }
         }
     }
-    // js/managers/ArtifactManager.js 클래스 내부
 
-    /**
-     * 보유하지 않은 유물 중 하나를 무작위로 반환합니다.
-     * @param {string|null} targetRarity - 특정 등급만 뽑고 싶을 때 (예: 'LEGENDARY'). 없으면 전체.
-     * @returns {string|null} 유물 키(key) 또는 null (뽑을 게 없을 때)
-     */
     getNewArtifactKey(targetRarity = null) {
-        // 1. 전체 유물 목록
         const allKeys = Object.keys(ARTIFACT_DATA);
-        
-        // 2. 이미 가진 유물 목록
-        // (ArtifactManager의 getter나 GAME_DATA 직접 참조)
         const owned = GAME_DATA.artifacts || [];
-
-        // 3. ★ [핵심] 필터링: (전체 - 보유) = 획득 가능 목록
         let candidates = allKeys.filter(key => !owned.includes(key));
 
-        // 4. 등급 필터링 (필요 시)
         if (targetRarity) {
             candidates = candidates.filter(key => ARTIFACT_DATA[key].rarity === targetRarity);
         }
 
-        // 5. 뽑을 유물이 하나도 없으면 (올클리어) null 반환
         if (candidates.length === 0) return null;
-
-        // 6. 랜덤 선택
         const pick = candidates[Math.floor(Math.random() * candidates.length)];
         return pick;
     }
+
     // ====================================================
     // ★ UI 및 에디터
     // ====================================================
 
-createUI() {
-        // HTML에 미리 만들어둔 id="artifact-container"를 찾습니다.
+    createUI() {
         let artContainer = document.getElementById('artifact-container');
-        
-        // 만약 HTML에 실수로 안 넣었을 때만 비상용으로 생성 (body에 붙임)
         if (!artContainer) {
             artContainer = document.createElement('div');
             artContainer.id = 'artifact-container';
             artContainer.className = 'artifact-container';
             document.body.appendChild(artContainer);
         }
-        
         this.uiDOM = artContainer;
     }
 
-// js/managers/ArtifactManager.js 내부의 updateUI 함수 교체
-
     updateUI() {
         if (!this.uiDOM) return;
-        this.uiDOM.innerHTML = ''; // 초기화
+        this.uiDOM.innerHTML = ''; 
 
         this.inventory.forEach(key => {
             const data = ARTIFACT_DATA[key];
@@ -292,17 +278,11 @@ createUI() {
             div.className = 'artifact-icon';
             div.style.borderColor = RARITY_COLORS[data.rarity];
             
-            // 1. 아이콘 글자 (이미지 없을 때 대비)
             div.innerText = data.name[0]; 
             
-            // ★ [수정] 기존 title 속성 제거 (브라우저 기본 툴팁 끄기)
-            // div.title = ... (삭제)
-
-            // 2. ★ [추가] 커스텀 툴팁 HTML 생성
             const tooltip = document.createElement('div');
             tooltip.className = 'artifact-tooltip';
             
-            // 등급 텍스트 변환 (영어 -> 한글)
             const rarityName = (data.rarity === 'LEGENDARY') ? '전설' : (data.rarity === 'EPIC' ? '에픽' : '희귀');
             const rarityColor = RARITY_COLORS[data.rarity];
 
@@ -313,9 +293,7 @@ createUI() {
                 <div class="art-tooltip-desc">${data.desc.replace(/\n/g, '<br>')}</div>
             `;
 
-            // 3. 아이콘 안에 툴팁 넣기
             div.appendChild(tooltip);
-            
             this.uiDOM.appendChild(div);
         });
     }

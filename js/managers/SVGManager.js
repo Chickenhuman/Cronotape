@@ -91,14 +91,12 @@ class SVGManager {
             }
         });
     }
-
+// ★ [핵심 수정] 파츠 이름을 하드코딩하지 않고 동적으로 처리
     generateUnitTextures(name, team, partConfig, onUnitFinished) {
-        let partsToLoad = 0;
-        if (partConfig.body) partsToLoad++;
-        if (partConfig.weapon) partsToLoad++;
-        if (partConfig.acc) partsToLoad++;
+        // 설정된 모든 파츠의 키를 가져옵니다 (예: ['body', 'weapon', 'wings'])
+        const partKeys = Object.keys(partConfig);
 
-        if (partsToLoad === 0) {
+        if (partKeys.length === 0) {
             if (onUnitFinished) onUnitFinished();
             return;
         }
@@ -106,20 +104,24 @@ class SVGManager {
         let partsLoaded = 0;
         const onPartDone = () => {
             partsLoaded++;
-            if (partsLoaded >= partsToLoad) {
+            if (partsLoaded >= partKeys.length) {
                 if (onUnitFinished) onUnitFinished();
             }
         };
 
-        if (partConfig.body) {
-            this.createTexture(`${partConfig.body}_${team}`, this.getSVGString(partConfig.body, team), onPartDone);
-        }
-        if (partConfig.weapon) {
-            this.createTexture(partConfig.weapon, this.getSVGString(partConfig.weapon), onPartDone);
-        }
-        if (partConfig.acc) {
-            this.createTexture(`${partConfig.acc}_${team}`, this.getSVGString(partConfig.acc, team), onPartDone);
-        }
+        // 반복문으로 모든 파츠 처리
+        partKeys.forEach(partName => {
+            const textureKey = partConfig[partName];
+            
+            // [규칙] 'weapon'이 아닌 모든 파츠는 팀 색상(_ALLY/_ENEMY)을 적용
+            // 만약 날개(wings)도 팀 색상을 따라가게 하려면 이 로직이 적합합니다.
+            const isNeutral = (partName === 'weapon'); 
+            
+            const finalKey = isNeutral ? textureKey : `${textureKey}_${team}`;
+            const colorParam = isNeutral ? null : team;
+
+            this.createTexture(finalKey, this.getSVGString(textureKey, colorParam), onPartDone);
+        });
     }
 
     createTexture(key, svgString, callback) {

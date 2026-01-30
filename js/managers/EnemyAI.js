@@ -169,34 +169,36 @@ generateWave(stage) {
     // ----------------------------------------------------------------
     // ★ [AI Strategy] 유닛 배치 전략
     // ----------------------------------------------------------------
+// ----------------------------------------------------------------
+    // ★ [AI Strategy] 유닛 배치 전략 - [수정됨]
+    // ----------------------------------------------------------------
     decideSmartPosition(aiType, unitName, analysis) {
         const time = parseFloat(Phaser.Math.FloatBetween(1.0, 6.0).toFixed(1));
         const stats = UNIT_STATS[unitName];
         if (!stats) return null;
 
-const isInfiltrator = (stats.traits && stats.traits.includes('침투'));
+        const isInfiltrator = (stats.traits && stats.traits.includes('침투'));
         
-        // ★ [수정] 소환 X 좌표를 맵 그리드 안쪽으로 안전하게 제한
+        // X 좌표 결정
         const mapRightEdge = (this.scene.mapWidth * this.scene.tileSize);
         const safeSpawnX = Math.min(this.scene.scale.width, mapRightEdge) - 80;
+        const spawnX = Phaser.Math.Between(safeSpawnX - 50, safeSpawnX);        
         
-        // 50px 범위 내에서 랜덤
-        const spawnX = Phaser.Math.Between(safeSpawnX - 50, safeSpawnX);        let spawnY = -1;
-
+        // Y 좌표 결정 (레인 분석 기반)
+        let spawnY = -1;
         const lh = analysis.laneHeight || 200; 
         let targetLaneIndex = 1; 
 
-        if (aiType === 'TRICKY') {
-            targetLaneIndex = analysis.emptyLane;
-        } else if (aiType === 'DEFENSIVE') {
-            targetLaneIndex = analysis.busyLane;
-        } else {
+        if (aiType === 'TRICKY') targetLaneIndex = analysis.emptyLane;
+        else if (aiType === 'DEFENSIVE') targetLaneIndex = analysis.busyLane;
+        else {
             const isTank = (stats.hp >= 100 || unitName === '방벽');
             if (isTank) targetLaneIndex = analysis.busyLane;
             else if (isInfiltrator) targetLaneIndex = analysis.emptyLane;
             else targetLaneIndex = Phaser.Math.Between(0, 2);
         }
 
+        // 유효한 Y 좌표 탐색
         for (let i = 0; i < 15; i++) { 
             const currentLane = (i < 10) ? targetLaneIndex : Phaser.Math.Between(0, 2);
             const minY = currentLane * lh + 30;
@@ -211,17 +213,13 @@ const isInfiltrator = (stats.traits && stats.traits.includes('침투'));
             const tileVal = (grid[tileY] && grid[tileY][tileX] !== undefined) ? grid[tileY][tileX] : 4;
 
             let isValid = false;
-
-            if (tileVal === 1 || tileVal === 4) {
-                isValid = false;
-            } else {
+            if (tileVal !== 1 && tileVal !== 4) {
                 if (isInfiltrator) {
                     if (tileVal === 0 || tileVal === 3) isValid = true;
                 } else {
                     if (tileVal === 3) isValid = true;
                 }
             }
-
             if (tileVal === 2) isValid = false;
 
             if (isValid) { 
@@ -229,18 +227,15 @@ const isInfiltrator = (stats.traits && stats.traits.includes('침투'));
                 break;
             }
         }
+
         if (spawnY !== -1) {
-            // ★ [수정] 적군도 오프셋을 미리 계산해서 저장합니다.
-            const offsets = [];
-            const count = stats.count || 1;
-            for(let i=0; i<count; i++) {
-                if (i === 0) offsets.push({x: 0, y: 0});
-                else offsets.push({ x: Math.random() * 40 - 20, y: Math.random() * 40 - 20 });
-            }
+            // ★ [핵심 수정] GameLogic의 공용 함수 사용 (하드코딩 제거됨)
+            // 적군은 조금 더 넓게 퍼지도록 spread 값을 40으로 설정
+            const offsets = GameLogic.getSpawnOffsets(stats.count || 1, 40);
 
             return { 
                 time, type: 'Unit', name: unitName, x: spawnX, y: spawnY, spawned: false,
-                offsets: offsets // ★ 오프셋 포함
+                offsets: offsets 
             };
         }
         return null;
