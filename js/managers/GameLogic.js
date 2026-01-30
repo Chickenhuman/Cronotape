@@ -25,16 +25,48 @@ class GameLogic {
         }
         return nearest;
     }
+    // ★ [신규] 다친 아군 찾기 (힐러용)
+    static findInjuredAlly(me, allUnits) {
+        let nearest = null;
+        let minDist = 9999;
 
+        for (const u of allUnits) {
+            if (!u.active || !u.isSpawned) continue;
+            if (u.currentHp <= 0) continue;
+            if (u.team !== me.team) continue; // ★ 같은 팀(아군)만 찾음
+            if (u === me) continue; // 자기 자신 제외 (선택사항)
+
+            // ★ 풀피인 아군은 힐 대상 아님
+            if (u.currentHp >= u.stats.hp) continue;
+            if (u.isBase) continue;
+            const dist = this.getDistance(me, u);
+            if (dist < minDist) {
+                minDist = dist;
+                nearest = u;
+            }
+        }
+        return nearest;
+    }
  // ★ [핵심] isSimulation 파라미터가 반드시 있어야 합니다!
     static runUnitLogic(me, allUnits, dt, grid, tileSize, easystar, isSimulation = false) {
         if (!me.active || me.currentHp <= 0) return;
         
         if (me.attackCooldown > 0) me.attackCooldown -= dt;
         if (me.pathTimer > 0) me.pathTimer -= dt;
-
-        const target = this.findTarget(me, allUnits);
+        let target = null;
         
+        if (me.stats.role === 'HEALER') {
+            // 1순위: 다친 아군
+            target = this.findInjuredAlly(me, allUnits);
+            
+            // 2순위: 아군이 다 건강하면 적군 공격 (선택사항)
+            if (!target) {
+                target = this.findTarget(me, allUnits);
+            }
+        } else {
+            // 일반 유닛: 적군 찾기
+            target = this.findTarget(me, allUnits);
+        }
         // 타겟이 없으면(적 전멸) 로직 종료
         if (!target) return;
 

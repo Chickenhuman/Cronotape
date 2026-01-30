@@ -6,17 +6,17 @@ class BattleScene extends Phaser.Scene {
 preload() {
         // [1] 유닛 아이콘 (기존 방식 유지)
         // (아이콘도 소프트코딩 가능하지만, 일단 안전하게 기존 리소스 로드 유지)
-        this.load.image('img_swordman', 'assets/icon/swordman.png');
+        /*this.load.image('img_swordman', 'assets/icon/swordman.png');
         this.load.image('img_archer', 'assets/icon/archer.png');
         this.load.image('img_healer', 'assets/icon/healer.png');
         this.load.image('img_wall', 'assets/icon/wall.png');
         this.load.image('img_assassin', 'assets/icon/assassin.png');
         this.load.image('img_enemy', 'assets/icon/enemy.png');
-
+        */
         // [2] 배경 및 기타 리소스
         this.load.image('bg_battle', 'assets/maps/battle_bg1.png');
         this.load.image('cmd_knight', 'assets/commanders/knight.png');
-        this.load.image('base_knight', 'assets/base/base_knight.png');
+        //this.load.image('base_knight', 'assets/base/base_knight.png');
         
         // ★ [소프트 코딩] 데이터(UNIT_STATS, SKILL_STATS)를 순회하며 일러스트 자동 로드
         // 조건: data.js의 image 속성이 'img_이름' 형태여야 하며, 
@@ -65,25 +65,27 @@ create() {
         }
         
         // [2] 매니저 초기화
+        this.svgManager = new SVGManager(this);
         this.simulator = new GhostSimulator();
         this.enemyAI = new EnemyAI(this);
+
         this.cardManager = new CardDeckManager(this);
         this.interactionManager = new InteractionManager(this);
         this.combatManager = new CombatManager(this);
         this.uiManager = new UIManager(this);
         this.ghostGroup = this.add.group();
-        
+       if (this.svgManager && typeof UNIT_STATS !== 'undefined') {
+            this.svgManager.prebakeAllTextures();
+        }
         this.fieldGraphics = this.add.graphics();
         this.fieldGraphics.setDepth(10); 
         this.fieldGraphics.setVisible(false); 
-    
+        this.uiManager.toggleArtifactUI(true);
         
         // [에디터 초기화]
-        this.isEditorMode = false;
-        this.coordTextGroup = this.add.group();
-        this.gridGraphics = this.add.graphics();
-        this.gridGraphics.setDepth(5); 
-        this.gridGraphics.setVisible(false);
+ 
+    
+
         this.uiManager.setupSpeedControls();
         this.uiManager.setupTimelineEvents(); 
         this.uiManager.updateCostUI();
@@ -118,13 +120,13 @@ create() {
         this.tileSize = this.mapData.tileSize;
         this.mapWidth = this.mapData.mapWidth;
         this.mapHeight = this.mapData.mapHeight;
-
         const bg = this.add.image(this.scale.width / 2, this.scale.height / 2, this.mapData.image);
         bg.setDisplaySize(this.scale.width, this.scale.height);
         bg.setTint(0xaaaaaa);
         
-        this.grid = this.mapData.getGrid(this.mapWidth, this.mapHeight); 
-        
+     this.grid = this.mapData.getGrid(this.mapWidth, this.mapHeight); // 1. 그리드를 먼저 생성
+        this.createOutfieldLine();
+
         this.easystar = new EasyStar.js();
         this.easystar.setGrid(this.grid); 
         this.easystar.setAcceptableTiles([0, 2, 3]);
@@ -154,10 +156,14 @@ this.simEasystar.setIterationsPerCalculation(1000000000);
         if (logContainer) logContainer.style.display = 'none';
 
         // [5] 이벤트 리스너
-        this.input.on('pointerdown', (pointer) => {
-            if (pointer.y > this.scale.height - 230 || this.isPlaying) return; 
-            this.interactionManager.handleMapClick(pointer);
-        });
+this.input.on('pointerdown', (pointer) => {
+        // ★ [수정] 하드코딩된 Y축 제한(230px) 삭제!
+        // 이제 화면 맨 아래쪽까지 자유롭게 클릭하여 유닛을 배치할 수 있습니다.
+        if (this.isPlaying) return; 
+
+        // InteractionManager 내부에서 '4번 타일(장외)'인지 체크하므로 안전합니다.
+        this.interactionManager.handleMapClick(pointer);
+    });
         
         // 버튼 이벤트 복구
         const btnGo = document.getElementById('btn-turn-end');
@@ -201,113 +207,61 @@ this.simEasystar.setIterationsPerCalculation(1000000000);
         this.toggleBattleUI(false);
         this.createTimelineUI();
 
-        // 에디터 모드 버튼
-        const toggleButton = document.createElement('button');
-        toggleButton.innerText = '에디터 모드 (OFF)';
-        toggleButton.style.position = 'absolute';
-        toggleButton.style.top = '10px';
-        toggleButton.style.right = '10px';
-        toggleButton.style.zIndex = '100'; 
-        document.body.appendChild(toggleButton);
+    }
 
-        toggleButton.onclick = () => {
-            this.isEditorMode = !this.isEditorMode;
-            toggleButton.innerText = `에디터 모드 (${this.isEditorMode ? 'ON' : 'OFF'})`;
-            this.drawEditorGrid();
-            if (this.cardManager.selectedCardIdx !== -1) {
-                this.interactionManager.drawDeploymentZones(!this.isEditorMode);
+createOutfieldLine() {
+        // 1. 유효한 마지막 행(Row) 찾기 (하드코딩 방지: 그리드 스캔)
+        let lastPlayableRow = -1;
+        for (let y = this.grid.length - 1; y >= 0; y--) {
+            // 해당 줄에 4(장외)가 아닌 타일이 하나라도 있으면 유효 행으로 인정
+            const hasPlayableTile = this.grid[y].some(tileVal => tileVal !== 4);
+            if (hasPlayableTile) {
+                lastPlayableRow = y;
+                break;
             }
-        };
-    }
+        }
 
-drawDeploymentZones(shouldDraw) {
-        if (this.interactionManager) this.interactionManager.drawDeploymentZones(shouldDraw);
-    }
+        // 유효한 땅이 없으면 그리지 않음
+        if (lastPlayableRow === -1) return;
 
-    // ★ [추가] Unit/GhostSimulator 등에서 호출할 수도 있는 취소 함수 연결
-    cancelDeployment(plan) {
-        if (this.interactionManager) this.interactionManager.cancelDeployment(plan);
-    }
+        // 2. Y좌표 계산 (마지막 유효 타일의 바로 아래쪽 끝)
+        // Phaser 좌표계이므로 스케일링 이슈가 자동으로 해결됨
+        const limitY = (lastPlayableRow + 1) * this.tileSize;
 
+        // 3. 그래픽 객체 생성 (선 그리기)
+        const graphics = this.add.graphics();
+        graphics.setDepth(20); // 유닛(Depth 1)보다 위에, UI보단 아래에
+
+        // 네온 효과 (여러 번 겹쳐서 빛나는 느낌)
+        graphics.lineStyle(4, 0xff0055, 0.3); // 두껍고 흐린 선
+        graphics.lineBetween(0, limitY, this.scale.width, limitY);
+
+        graphics.lineStyle(2, 0xff0055, 0.8); // 중간 선
+        graphics.lineBetween(0, limitY, this.scale.width, limitY);
+        
+        graphics.lineStyle(1, 0xffffff, 1.0); // 중심 흰색 선 (가장 밝음)
+        graphics.lineBetween(0, limitY, this.scale.width, limitY);
+
+        // 4. 텍스트 라벨 ("DEPLOYMENT LIMIT")
+        const labelBox = this.add.container(this.scale.width / 2, limitY);
+        labelBox.setDepth(21);
+
+        const bg = this.add.rectangle(0, 0, 140, 20, 0x000000, 0.8);
+        bg.setStrokeStyle(1, 0xff0055);
+
+        const text = this.add.text(0, 0, "DEPLOYMENT LIMIT ▼", {
+            fontSize: '11px',
+            fontFamily: 'Rajdhani, sans-serif',
+            color: '#ff0055',
+            fontStyle: 'bold'
+        }).setOrigin(0.5);
+
+        labelBox.add([bg, text]);
+        
+        // (선택 사항) 맵 데이터에 한계선 Y좌표 저장 (다른 로직에서 쓸 수 있게)
+        this.mapData.limitPixelY = limitY;
+    }
    
-// BattleScene.js 클래스 내부 (적절한 위치에 추가)
-drawEditorGrid() {
-        // 기존 그리드 및 좌표 모두 클리어
-        this.gridGraphics.clear();
-        this.coordTextGroup.clear(true, true);
-        
-        if (!this.isEditorMode) {
-            this.gridGraphics.setVisible(false);
-            return;
-        }
-
-        this.gridGraphics.setVisible(true);
-        this.gridGraphics.lineStyle(1, 0xaaaaaa, 0.5); // 회색 얇은 선
-        
-        // 맵의 최종 픽셀 크기 (Phaser 캔버스 크기와 일치해야 함)
-        const mapPixelWidth = this.scale.width;
-        const mapPixelHeight = this.scale.height;
-
-        // 1. 그리드 선 그리기 (맵 전체를 덮도록 확실하게)
-        for (let x = 0; x <= this.mapWidth; x++) {
-            const worldX = x * this.tileSize;
-            this.gridGraphics.beginPath();
-            // ★ X축 선: 0부터 맵의 전체 높이까지 그립니다.
-            this.gridGraphics.moveTo(worldX, 0); 
-            this.gridGraphics.lineTo(worldX, mapPixelHeight);
-            this.gridGraphics.strokePath();
-        }
-
-        for (let y = 0; y <= this.mapHeight; y++) {
-            const worldY = y * this.tileSize;
-            this.gridGraphics.beginPath();
-            // ★ Y축 선: 0부터 맵의 전체 너비까지 그립니다.
-            this.gridGraphics.moveTo(0, worldY);
-            this.gridGraphics.lineTo(mapPixelWidth, worldY);
-            this.gridGraphics.strokePath();
-        }
-
-        // 2. 그리드 좌표 텍스트 및 이동 불가 구역 색상 표시 (맵 전체)
-        for (let y = 0; y < this.mapHeight; y++) {
-            for (let x = 0; x < this.mapWidth; x++) {
-                const tileX = x * this.tileSize + this.tileSize / 2;
-                const tileY = y * this.tileSize + this.tileSize / 2;
-                
-                // 좌표 텍스트 표시
-                const coordText = this.add.text(tileX, tileY, `${x},${y}`, { 
-                    fontSize: '12px', 
-                    color: '#ffffff',
-                    backgroundColor: '#000000d0', 
-                    padding: { x: 4, y: 2 }
-                }).setOrigin(0.5);
-                
-                coordText.setDepth(50); // 최상단에 표시
-                this.coordTextGroup.add(coordText);
-                
-                // 이동 불가 구역 (grid[y][x] === 1) 표시
-if (this.grid[y] && this.grid[y][x] === 1) {
-                    // 장애물: 빨강
-                    this.gridGraphics.fillStyle(0xff0000, 0.4); 
-                    this.gridGraphics.fillRect(tileX - this.tileSize/2, tileY - this.tileSize/2, this.tileSize, this.tileSize);
-                } else if (this.grid[y] && this.grid[y][x] === 2) {
-                    // 아군 배치 구역: 파랑 (선택사항)
-                    this.gridGraphics.fillStyle(0x0000ff, 0.2); 
-                    this.gridGraphics.fillRect(tileX - this.tileSize/2, tileY - this.tileSize/2, this.tileSize, this.tileSize);
-                } else if (this.grid[y] && this.grid[y][x] === 3) {
-                    // ★ 적 감시 구역: 주황색 경고 느낌
-                    this.gridGraphics.fillStyle(0xff8800, 0.3); 
-                    this.gridGraphics.fillRect(tileX - this.tileSize/2, tileY - this.tileSize/2, this.tileSize, this.tileSize);
-                } else {
-                    // 일반 땅: 연두
-                    this.gridGraphics.fillStyle(0x00ff00, 0.1); 
-                    this.gridGraphics.fillRect(tileX - this.tileSize/2, tileY - this.tileSize/2, this.tileSize, this.tileSize);
-                }
-            }
-        }
-        
-        this.gridGraphics.setDepth(5);
-        this.coordTextGroup.setDepth(50);
-    }
 
     getAdjustedStats(type, name) {
         const base = (type === 'Unit') ? UNIT_STATS[name] : SKILL_STATS[name];
@@ -347,7 +301,6 @@ update(time, delta) {
         this.activeUnits.forEach(unit => {
             if (unit.active) {
                 if (unit.update) unit.update(dt); 
-                if (unit.isBase) this.updateHpBar(unit);
             }
         });
 
@@ -456,100 +409,6 @@ updateBonusUI() {
         return nearest;
     }
         // [1] 카드 선택 확인
-handleMapClick(pointer) {
-        if (this.isPlaying) return;
-
-        // [1] 클릭한 좌표를 그리드(타일) 좌표로 변환
-        const tileX = Math.floor(pointer.x / this.tileSize);
-        const tileY = Math.floor(pointer.y / this.tileSize);
-
-        // [2] 에디터 모드 처리
-        if (this.isEditorMode) {
-            if (this.grid[tileY] && this.grid[tileY][tileX] !== undefined) {
-                // 0 -> 1 -> 2 -> 3 -> 0 순환 (3번 타일도 에디터로 찍을 수 있게 수정)
-                let current = this.grid[tileY][tileX];
-                let nextVal = (current + 1) % 4; 
-                
-                this.grid[tileY][tileX] = nextVal;
-                this.drawEditorGrid(); 
-            }
-            return; 
-        }
-
-        if (this.cardManager.selectedCardIdx === -1) return;
-
-const cardStr = this.cardManager.hand[this.cardManager.selectedCardIdx];
-        const [type, name] = cardStr.split('-');
-        
-        const stat = this.getAdjustedStats(type, name);
-        const traits = stat.traits || [];
-        const hasInfiltrate = traits.includes('침투'); 
-
-        const tileVal = (this.grid[tileY] && this.grid[tileY][tileX] !== undefined) 
-                        ? this.grid[tileY][tileX] 
-                        : 4; 
-
-        if (tileVal === 4) {
-             this.showFloatingText(pointer.x, pointer.y, "전장을 벗어났습니다!", '#ff0000');
-             return; 
-        }
-
-        if (type === 'Unit') {
-            if (tileVal === 1) {
-                this.showFloatingText(pointer.x, pointer.y, "배치 불가 지형!", '#ff0000');
-                return; 
-            }
-            if (tileVal === 3) {
-                this.showFloatingText(pointer.x, pointer.y, "적 감시 구역! (배치 불가)", '#ff0000');
-                return; 
-            }
-            if (tileVal !== 2 && !hasInfiltrate) {
-                this.showFloatingText(pointer.x, pointer.y, "아군 지역이 아닙니다.", '#ff0000');
-                return;
-            }
-        }
-
-        if (this.playerCost < stat.cost) {
-            this.showFloatingText(pointer.x, pointer.y, "코스트 부족!", '#ff0000');
-            return;
-        }
-
-        const targetIdx = this.cardManager.selectedCardIdx;
-
-        // ★ 매니저 상태 업데이트
-        this.cardManager.selectedCardIdx = -1; 
-        this.drawDeploymentZones(false);
-        
-        this.playerCost -= stat.cost;
-        this.updateCostUI();
-        
-        // ★ 매니저에게 애니메이션 및 데이터 처리 위임
-        this.cardManager.animateCardUse(targetIdx);
-
-        const slider = document.getElementById('timeline-slider');
-        let currentTime = 0;
-        if (slider) currentTime = (slider.value / 100).toFixed(1);
-        
-        const marker = this.add.circle(pointer.x, pointer.y, 15, stat.color);
-        marker.setAlpha(0.5);
-
-        const plan = {
-            type: type, name: name, x: pointer.x, y: pointer.y,
-            time: parseFloat(currentTime), spawned: false,
-            visualMarker: marker, visualText: text
-        };
-        this.deployedObjects.push(plan);
-
-        marker.setInteractive({ cursor: 'pointer' });
-        marker.on('pointerdown', (ptr, localX, localY, event) => {
-            if (this.isPlaying || plan.spawned) return;
-            if (this.cardManager.selectedCardIdx !== -1) return; 
-            this.cancelDeployment(plan);
-            if (event) event.stopPropagation();
-        });
-        
-        this.updateGhostSimulation();
-    }
 
     drawDeploymentZones(shouldDraw) {
         // 1. 그래픽 초기화 (기존에 그려진 것 지우기)
@@ -557,7 +416,7 @@ const cardStr = this.cardManager.hand[this.cardManager.selectedCardIdx];
         this.fieldGraphics.setVisible(false);
 
     // ★ 매니저의 선택 상태 확인
-        if (this.isEditorMode || this.isPlaying || !shouldDraw || this.cardManager.selectedCardIdx === -1) {
+        if (this.isPlaying || !shouldDraw || this.cardManager.selectedCardIdx === -1) {
             return;
         }
 
@@ -609,22 +468,6 @@ const cardStr = this.cardManager.hand[this.cardManager.selectedCardIdx];
         const index = this.deployedObjects.indexOf(plan);
         if (index > -1) this.deployedObjects.splice(index, 1);
         this.drawPredictions();
-    }
-
-    resetAllPlans() {
-        if (this.isPlaying || this.deployedObjects.length === 0) return;
-        
-        this.showPopup(
-            "배치 초기화",
-            "이번 라운드의 모든 배치를\n취소하시겠습니까?",
-            () => {
-                for (let i = this.deployedObjects.length - 1; i >= 0; i--) {
-                    this.cancelDeployment(this.deployedObjects[i]);
-                }
-                this.predictionGraphics.clear();
-            },
-            true
-        );
     }
 
 // BattleScene.js 내부 checkSpawns 함수 교체
@@ -693,17 +536,24 @@ checkSpawns() {
             }
         });
     }
-
 spawnUnit(x, y, team, name, customStats = null) {
-        // 1. 스탯 결정 (커스텀 스탯이 있으면 그걸 쓰고, 없으면 기본값 가져오기)
-        const baseStats = (team === 'ALLY') ? this.getAdjustedStats('Unit', name) : getEnemyStats(name);
-        const stats = customStats || baseStats;
+        // 1. 스탯 결정 (수정됨)
+        // ★ customStats가 있으면 그걸 쓰고, 없을 때만 데이터를 조회합니다.
+        let stats = customStats;
+        
+        if (!stats) {
+            stats = (team === 'ALLY') ? this.getAdjustedStats('Unit', name) : getEnemyStats(name);
+        }
+
+        // 데이터가 여전히 없으면 중단 (안전장치)
+        if (!stats) {
+            console.error(`[Spawn Error] 유닛 데이터를 찾을 수 없습니다: ${name}`);
+            return null;
+        }
 
         // 2. 유닛 생성 (Unit 클래스 사용)
-        // ★ [핵심 수정] 이 부분이 빠져서 오류가 났던 것입니다.
         let unit;
         try {
-            // Unit 클래스로 인스턴스 생성
             unit = new Unit(this, x, y, name, team, stats);
         } catch (e) {
             console.error(`[Spawn Error] Unit 생성 실패: ${name}`, e);
@@ -713,19 +563,12 @@ spawnUnit(x, y, team, name, customStats = null) {
         // 3. 팀 설정 및 관리 목록 추가
         unit.team = team;
         
-        // activeUnits 배열에 추가 (게임 업데이트 루프에서 관리됨)
         if (this.activeUnits) {
             this.activeUnits.push(unit);
         }
 
-        // 4. 초기화 로그 (선택사항)
-        // console.log(`Spawned ${name} for ${team} at (${x},${y})`);
-
         return unit;
     }
-
-    // 카드를 드롭했을 때 호출되는 함수 (예시)
-// js/scenes/BattleScene.js 클래스 내부
 
  // js/scenes/BattleScene.js
 
@@ -827,73 +670,129 @@ showFloatingText(x, y, msg, color) {
         this.combatManager.showFloatingText(x, y, msg, color);
     }
 
-    updateHpBar(unit) {
-        if (!unit.active) return;
-        if (unit.isBase) unit.hpText.setText(unit.currentHp);
-        else { unit.hpBar.x = unit.x; unit.hpBar.y = unit.y - 25; }
-        const ratio = Math.max(0, unit.currentHp / unit.stats.hp);
-        unit.hpBar.width = (unit.isBase ? 60 : 30) * ratio;
-        unit.hpBar.fillColor = (ratio > 0.3) ? 0x00ff00 : 0xff0000;
-    }
-
 killUnit(unit) {
         this.combatManager.killUnit(unit);
     }
 
-  // BattleScene.js
+ createBase(team) {
+    // 1. 위치 설정
+    const centerY = this.scale.height / 2;
+    // 아군은 왼쪽(100), 적군은 오른쪽(끝에서 100)
+    const x = (team === 'ALLY') ? 100 : (this.scale.width - 100); 
+    const y = centerY;
 
-    // [1] 기지 생성 (지휘관별 체력 적용)
-createBase(team) {
-        const centerY = this.scale.height / 2; 
-        const x = (team === 'ALLY') ? 100 : (this.scale.width - 100);
-        const y = centerY;
-        let base;
+    let stats = {};
+    let unitName = '';
+
+    // 2. 아군/적군 데이터 로드
+    if (team === 'ALLY') {
+        // (A) 플레이어 지휘관 데이터
+        const cmdKey = (typeof selectedCommander !== 'undefined') ? selectedCommander : 'knight';
+        const cmdData = COMMANDERS[cmdKey] || COMMANDERS['knight'];
+
+        unitName = `Base_${cmdKey}`; 
         
-        let maxHp = 1000;
-
-        if (team === 'ALLY') {
-            const cmdKey = (typeof selectedCommander !== 'undefined') ? selectedCommander : 'knight';
-            const cmdStat = COMMANDERS[cmdKey] || COMMANDERS['knight'];
-            maxHp = cmdStat.hp; // 지휘관 고유 체력
-
-            const baseKey = `base_${cmdKey}`; 
-            if (this.textures.exists(baseKey)) {
-                base = this.add.sprite(x, y, baseKey);
-                base.setDisplaySize(80, 100); 
-            } else {
-                base = this.add.rectangle(x, y, 50, 90, 0x3366ff);
-            }
+stats = {
+            hp: cmdData.hp,
+            damage: 0,
+            speed: 0,
+            range: 0,
+            isStructure: true,
             
-            // ★ 체력 불러오기 (스테이지 1-1만 풀피, 나머지는 누적)
-            if (GAME_DATA.stage === 1 && GAME_DATA.campaign.day === 1) {
-                base.currentHp = maxHp;
-                GAME_DATA.maxHp = maxHp; 
-            } else {
-                base.currentHp = GAME_DATA.currentHp;
-                if (!GAME_DATA.maxHp) GAME_DATA.maxHp = maxHp;
+            // ★ 기지 이미지를 '몸통(body)'으로 설정하고, 무기는 없앱니다.
+            parts: {
+                body: `base_${cmdKey}`, // 예: base_knight
+                weapon: null,           // 무기 제거
+                acc: null               // 장신구 제거
             }
-            
-        } else {
-            // 적군: 스테이지 비례 체력 증가
-            maxHp = 1000 + (GAME_DATA.stage * 200);
-            base = this.add.rectangle(x, y, 50, 90, 0xff3333);
-            base.currentHp = maxHp;
+        };
+
+        // 캠페인 모드 체력 이어하기
+        if (GAME_DATA && !(GAME_DATA.stage === 1 && GAME_DATA.campaign.day === 1)) {
+            if (GAME_DATA.currentHp) stats.currentHp = GAME_DATA.currentHp;
         }
 
-        base.team = team; 
-        base.stats = { hp: maxHp }; // Max HP 저장
-        base.active = true; 
-        base.isBase = true;
-        base.name = '기지';
-        base.isSpawned = true;
-
-        base.hpBar = this.add.rectangle(x, y - 65, 60, 8, 0x00ff00);
-        base.hpText = this.add.text(x - 20, y - 80, base.currentHp, { fontSize: '12px', color: '#fff' });
+    } else {
+        // (B) 적군 지휘관 데이터
+        const currId = GAME_DATA.campaign.currentNodeId;
+        const currNode = GAME_DATA.getNode(currId);
         
-        this.updateHpBar(base);
-        this.activeUnits.push(base);
+        let enemyId = currNode ? currNode.enemyId : null;
+        let enemyCmd = window.ENEMY_DATA_POOL[enemyId];
+
+        // 데이터 안전장치
+        if (!enemyCmd) {
+            console.warn(`[Battle] 적군 ID(${enemyId}) 데이터 없음. 기본값 사용.`);
+            enemyCmd = window.ENEMY_DATA_POOL['goblin_rookie'] || { hp: 1000, image: 'enemy_base' }; 
+        }
+
+        this.currentEnemyData = enemyCmd; 
+        unitName = `Base_Enemy`; 
+        
+stats = {
+            hp: enemyCmd.hp,
+            damage: 0,
+            speed: 0,
+            range: 0,
+            isStructure: true,
+            
+            // ★ 적군 기지도 동일하게 설정
+            parts: {
+                body: 'base_enemy', // SVGData.js에 정의된 키
+                weapon: null,
+                acc: null
+            }
+        };
     }
 
+    // 3. 유닛 생성 (spawnUnit 활용)
+    const baseUnit = this.spawnUnit(x, y, team, unitName, stats);
+    
+    // 4. ★ 기지 전용 추가 설정 (이 부분이 보완되었습니다)
+    if (baseUnit) {
+        baseUnit.isBase = true;     // 기지 식별자
+        baseUnit.isSpawned = true;  // 배치 완료 처리
+
+        // (1) 이미지 크기 및 위치 정렬 보정
+        if (baseUnit.bodySprite) {
+            // 기지는 크니까 100x120으로 설정 (필요시 숫자 조정)
+            baseUnit.bodySprite.setDisplaySize(100, 120);
+            
+            // ★ 중요: 발 밑(1.0)을 기준으로 정렬해야 땅에 딱 붙습니다.
+            baseUnit.bodySprite.setOrigin(0.5, 1.0); 
+        }
+
+        // (2) 물리 엔진 고정 (유닛이 밀어도 안 밀리게)
+        if (baseUnit.body) {
+            baseUnit.body.setImmovable(true); // 충돌 시 밀림 방지
+            baseUnit.body.moves = false;      // 물리 이동 연산 끔
+        }
+
+        // (3) 기지 파괴 시 승리/패배 로직 연결
+        // spawnUnit 내부에서 체력이 0이 되면 'dead' 이벤트를 발생시킨다고 가정
+        baseUnit.on('dead', () => {
+            console.log(`[Battle] ${team} 기지 파괴됨!`);
+            
+            if (team === 'ALLY') {
+                // 아군 기지 파괴 -> 게임 오버
+                if (typeof this.handleGameOver === 'function') {
+                    this.handleGameOver();
+                } else {
+                    console.log("게임 오버 함수가 없습니다."); // 디버깅용
+                }
+            } else {
+                // 적군 기지 파괴 -> 승리
+                if (typeof this.handleStageClear === 'function') {
+                    this.handleStageClear();
+                } else {
+                    console.log("스테이지 클리어 함수가 없습니다."); // 디버깅용
+                }
+            }
+        });
+    }
+
+    return baseUnit; // 생성된 기지 객체 반환
+}
     // [2] 게임 종료 및 결과 정산
     // [BattleScene.js] checkGameEnd 함수 수정
 
@@ -935,9 +834,8 @@ checkGameEnd(reason) {
     }
    // js/scenes/BattleScene.js
 // js/scenes/BattleScene.js
-
-    showRewardPopup(winMsg) {
-        // [1] UI 숨기기
+showRewardPopup(winMsg) {
+        // [1] 기존 UI 숨기기
         const uiIds = ['timeline-slider', 'hand-container', 'ui-top-bar', 'ui-bottom-bar', 'btn-turn-end', 'btn-reset'];
         uiIds.forEach(id => {
             const el = document.getElementById(id);
@@ -948,88 +846,84 @@ checkGameEnd(reason) {
         const rewards = this.cardManager.generateRewards ? this.cardManager.generateRewards() : [];
         if (rewards.length === 0) rewards.push('Unit-검사', 'Unit-궁수', 'Skill-화염구');
 
-        // 2. 팝업 컨테이너 (DOM)
+        // 2. 팝업 컨테이너 생성 (기존 것 제거 후 생성)
         let popup = document.getElementById('reward-popup');
         if (popup) popup.remove();
 
         popup = document.createElement('div');
-        popup.id = 'reward-popup';
-        popup.style.cssText = `
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.9); z-index: 5000;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            font-family: 'Rajdhani', sans-serif;
-        `;
+        popup.id = 'reward-popup'; // CSS의 #reward-popup 스타일 적용됨
 
-        // 3. 타이틀
-        const titleHTML = `
-            <h1 style="color: #ffd700; font-size: 60px; margin: 0; text-shadow: 0 0 10px #ff8800;">VICTORY!</h1>
-            <p style="color: #fff; font-size: 24px; margin-top: 10px; margin-bottom: 40px; text-align: center;">
-                ${winMsg || "전투 승리!"}<br>
-                <span style="font-size: 18px; color: #aaa;">덱에 추가할 카드를 선택하세요</span>
-            </p>
+        // 3. 내부 HTML 구조 생성 (CSS 클래스 활용)
+        popup.innerHTML = `
+            <div class="reward-box">
+                <div class="reward-title">VICTORY</div>
+                <div class="reward-subtitle">${winMsg || "전투 승리! 보상을 선택하세요."}</div>
+                <div class="reward-card-container" id="reward-cards"></div>
+                <button class="btn-reward-skip" id="btn-skip-reward">건너뛰기 (골드 +50)</button>
+            </div>
         `;
         
-        const cardContainer = document.createElement('div');
-        cardContainer.style.cssText = `display: flex; gap: 40px; justify-content: center; align-items: center;`;
+        document.body.appendChild(popup);
 
-        // 4. 카드 생성
+        // 4. 카드 생성 및 삽입
+        const cardContainer = popup.querySelector('#reward-cards');
+
         rewards.forEach((cardStr) => {
-            
-            // ★ [핵심] CardDeckManager가 툴팁과 배지까지 포함된 완벽한 카드를 만들어줍니다.
+            // CardDeckManager를 통해 카드 요소 생성
             const cardNode = this.cardManager.createCardElement(cardStr);
-            
-            // [스타일 보정] 보상 화면용
-            cardNode.classList.remove('card-in-viewer'); 
-            cardNode.style.position = 'relative'; 
-            cardNode.style.transform = 'scale(1.2)'; 
-            cardNode.style.margin = '0';
-            cardNode.style.cursor = 'pointer';
-
-            // [등급별 빛나는 효과]
             const [type, name] = cardStr.split('-');
             const stats = (type === 'Unit') ? UNIT_STATS[name] : SKILL_STATS[name];
             const rarity = stats.rarity || 'COMMON';
 
-            if (rarity === 'RARE') cardNode.style.boxShadow = `0 0 20px rgba(0, 136, 255, 0.6)`;
-            else if (rarity === 'LEGENDARY') cardNode.style.boxShadow = `0 0 20px rgba(255, 170, 0, 0.6)`;
+            // [보상용 스타일 오버라이딩]
+            cardNode.classList.remove('card-in-viewer'); 
+            cardNode.style.position = 'relative'; 
+            cardNode.style.transform = 'scale(1.0)'; // 기본 크기
+            cardNode.style.margin = '0';
+            cardNode.style.cursor = 'pointer';
+            cardNode.style.opacity = '1';
+            
+            // 등급별 후광 효과
+            if (rarity === 'RARE') cardNode.style.boxShadow = `0 0 15px rgba(0, 255, 0, 0.5)`;
+            else if (rarity === 'EPIC') cardNode.style.boxShadow = `0 0 20px rgba(200, 0, 255, 0.6)`;
+            else if (rarity === 'LEGENDARY') cardNode.style.boxShadow = `0 0 25px rgba(255, 215, 0, 0.8)`;
 
-            // [클릭 이벤트] 획득
+            // [클릭 이벤트] 획득 로직
             cardNode.onclick = () => {
                 GAME_DATA.addCard(cardStr);
                 GAME_DATA.addGold(50);
-                alert(`[${name}] 획득!\n(골드 +50)`);
+                
+                // 알림 팝업 (상점 스타일)
+                if(this.scene.get('ShopScene')) {
+                    this.scene.get('ShopScene').showCustomPopup("획득 완료", `[${name}] 카드를 얻었습니다!\n(골드 +50)`);
+                } else {
+                    alert(`[${name}] 획득!`);
+                }
+
                 document.body.removeChild(popup);
                 this.scene.start('MapScene');
             };
 
             // [호버 애니메이션]
-            cardNode.onmouseenter = () => { cardNode.style.transform = 'scale(1.3)'; cardNode.style.zIndex = '100'; };
-            cardNode.onmouseleave = () => { cardNode.style.transform = 'scale(1.2)'; cardNode.style.zIndex = ''; };
+            cardNode.onmouseenter = () => { 
+                cardNode.style.transform = 'scale(1.1) translateY(-10px)'; 
+                cardNode.style.zIndex = '100'; 
+            };
+            cardNode.onmouseleave = () => { 
+                cardNode.style.transform = 'scale(1.0)'; 
+                cardNode.style.zIndex = ''; 
+              
+            };
 
             cardContainer.appendChild(cardNode);
         });
 
-        // 5. 건너뛰기 버튼
-        const skipBtn = document.createElement('button');
-        skipBtn.innerText = "건너뛰기 (골드만 획득)";
-        skipBtn.style.cssText = `
-            margin-top: 60px; background: none; border: 1px solid #555; color: #888;
-            padding: 10px 20px; font-size: 16px; cursor: pointer; transition: 0.2s; font-family: 'Rajdhani', sans-serif;
-        `;
-        skipBtn.onmouseenter = () => { skipBtn.style.color = '#fff'; skipBtn.style.borderColor = '#fff'; };
-        skipBtn.onmouseleave = () => { skipBtn.style.color = '#888'; skipBtn.style.borderColor = '#555'; };
-        skipBtn.onclick = () => {
+        // 5. 건너뛰기 버튼 이벤트 연결
+        document.getElementById('btn-skip-reward').onclick = () => {
             GAME_DATA.addGold(50);
             document.body.removeChild(popup);
             this.scene.start('MapScene');
         };
-
-        // DOM 조립
-        popup.innerHTML = titleHTML;
-        popup.appendChild(cardContainer);
-        popup.appendChild(skipBtn);
-        document.body.appendChild(popup);
     }
 
     handleGameOver(reason) {
@@ -1152,7 +1046,7 @@ runPreSimulation() {
         // ★ [수정 3] 예약된 유닛 표시는 '항상' 실행 (전투 중이어도 보이게)
         // 조건: 아직 시간이 안 됐고(time > currentTime) && 아직 소환 안 된(!plan.spawned) 유닛
         this.deployedObjects.forEach(plan => {
-            if (plan.time > currentTime && !plan.spawned) {
+            if (plan.time >= currentTime && !plan.spawned) {
                 if (plan.type === 'Unit') {
                     // 보너스 타임 여부 체크
                     let isBonus = false;
@@ -1444,5 +1338,28 @@ fireCommanderSkill(target, cmd) {
         
         this.skillGraphics.arc(x, y, radius, startAngle, endAngle, false);
         this.skillGraphics.strokePath();
+    }
+    // [신규 기능] 현재 슬라이더 시간(Ghost Time)에 따른 실시간 코스트 계산
+    getRealTimeCost(unitName) {
+        const stat = UNIT_STATS[unitName];
+        if (!stat) return 0;
+
+        let finalCost = stat.cost;
+
+        // GhostSimulator가 있고, 보너스 타임 설정이 있는 경우 체크
+        if (this.ghostSimulator && stat.bonusTime) {
+            const currentTime = this.ghostSimulator.currentTime; // 슬라이더 시간 (초 단위)
+            const [start, end] = stat.bonusTime;
+
+            // 현재 시간이 보너스 구간(예: 0~3초)에 포함되는지 확인
+            if (currentTime >= start && currentTime <= end) {
+                // 보너스 효과 적용 (현재는 'cost' 감소만 처리)
+                if (stat.bonusEffect && stat.bonusEffect.stat === 'cost') {
+                    finalCost += stat.bonusEffect.val; // 예: 3 + (-1) = 2
+                }
+            }
+        }
+
+        return Math.max(0, finalCost); // 코스트가 음수가 되지 않도록 방지
     }
 }

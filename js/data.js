@@ -21,7 +21,12 @@ const UNIT_STATS = {
         
         // ★ [전략] 초반 러시 및 라인 유지
         bonusTime: [0, 3],
-    bonusEffect: { stat: 'cost', val: -1 }
+    bonusEffect: { stat: 'cost', val: -1 },
+    parts: { 
+            body: 'body_knight', 
+            weapon: 'weapon_sword', 
+            acc: 'acc_shield' 
+        }
     },
 
     '궁수': {
@@ -41,7 +46,11 @@ const UNIT_STATS = {
 
         // ★ [전략] 후반에 안정적인 프리딜 구도 형성
         bonusTime: [7, 10],
-        bonusEffect: { stat: 'damage', val: 5 }
+        bonusEffect: { stat: 'damage', val: 5 },
+        parts: {
+            body: 'body_archer',
+            weapon: 'weapon_bow'
+        },
     },
 
     '방벽': {
@@ -64,18 +73,25 @@ const UNIT_STATS = {
     '힐러': {
         cost: 5,
         hp: 100,
-        damage: -15, // 음수 값은 힐로 처리
+        damage: 15, 
         range: 250,
         attackSpeed: 2.0,
         speed: 40,
         race: '지원가',
         desc: '아군의 체력을 회복시킵니다.',
+        role: 'HEALER',
         image: 'img_healer',
         rarity: 'RARE',
 
         // ★ [전략] 난전이 벌어지는 중반에 슈퍼 세이브
         bonusTime: [3, 7],
-        bonusEffect: { stat: 'damage', val: -15 }
+        bonusEffect: { stat: 'damage', val: 15 },
+        parts: {
+            // 이번에 새로 추가한 로브와 지팡이!
+            body: 'body_robe',      
+            weapon: 'weapon_staff',
+            acc: 'acc_book' // 책이 없다면 acc_aura 등 다른 걸로 대체 가능
+        },
     },
 
     '암살자': {
@@ -93,7 +109,37 @@ const UNIT_STATS = {
 
         // ★ [전략] 막바지 킬 캐치 및 기지 테러
         bonusTime: [8, 10],
-        bonusEffect: { stat: 'damage', val: 50, unit: '%' }
+        bonusEffect: { stat: 'damage', val: 50, unit: '%' },
+        parts: {
+            body: 'body_ninja',
+            weapon: 'weapon_dagger'
+        },
+    },
+    '광전사': {
+        cost: 5,
+        hp: 180,
+        damage: 25,       // 공격력은 보통이지만 광역이라 총 피해량은 높음
+        range: 60,        // 근접이지만 칼이 커서 사거리 약간 김
+        attackSpeed: 1.5, // 무거워서 약간 느림
+        speed: 55,
+        race: '보병',
+        desc: '거대한 검을 휘둘러 주변 적에게 광역 피해를 줍니다.',
+        image: 'img_berserker', // (PNG 파일이 없다면 기존 기사 아이콘 등 임시 사용)
+        rarity: 'RARE',
+        
+        // ★ [핵심] 공격 타입 정의
+        attackType: 'SPLASH', 
+        weaponAnimType: 'HEAVY_SWING',
+        splashRadius: 30, // 주 타겟 주변 30px 반경에 피해
+        splashAngle: 120,
+        parts: {
+            body: 'body_knight',      // 몸통은 기사 공유
+            weapon: 'weapon_greatsword', // 무기는 대검
+                  // 등 뒤에 투기(오라)
+        },
+        
+        bonusTime: [5, 8],
+        bonusEffect: { stat: 'damage', val: 10 }
     },
 
     // (기존 레거시 데이터 제거 후 정리된 적군/기지 데이터)
@@ -224,10 +270,9 @@ const SKILL_STATS = {
 };
 
 const STARTER_DECK = [
-    'Unit-검사', 'Unit-암살자', 'Unit-암살자',
-    'Unit-궁수', 'Unit-궁수',
-    'Unit-방벽', 'Unit-방벽',
-    'Unit-암살자', 'Unit-암살자',
+    'Unit-검사', 'Unit-광전사', 'Unit-암살자',
+    'Unit-궁수', 'Unit-광전사',
+    'Unit-방벽',
     'Skill-돌멩이', 'Unit-힐러',
     'Skill-화염구', 
     'Skill-방어막'
@@ -265,31 +310,44 @@ function getEnemyStats(name) {
     }
     return base;
 }
-
-const ENEMY_COMMANDERS = {
-    1: { 
+// 기존 숫자 키 방식 -> ID 기반 풀(Pool) 방식으로 변경
+const ENEMY_DATA_POOL = {
+    // [Tier 1] 초반 잡몹 구간
+    'goblin_rookie': { 
         name: '초보 검투사', 
-        deck: ['적군'], 
-        aiType: 'BASIC', 
-        baseCost: 5
+        tier: 1, role: 'NORMAL', // 1스테이지 일반 전투용
+        hp: 1500, image: 'base_enemy_1', 
+        deck: ['적군'], aiType: 'BASIC', baseCost: 5 
     },
-    2: { 
+    'goblin_horde': { 
+        name: '고블린 떼', 
+        tier: 1, role: 'NORMAL',
+        hp: 1200, image: 'base_enemy_1', 
+        deck: ['적군', '적군', '적군'], aiType: 'AGGRESSIVE', baseCost: 8 
+    },
+
+    // [Tier 1] 정예/중반
+    'centurion': { 
         name: '백인대장', 
-        deck: ['적군', '궁수', '검사'], 
-        aiType: 'BALANCED', 
-        baseCost: 10
+        tier: 1, role: 'ELITE', 
+        hp: 2500, image: 'base_enemy_2', 
+        deck: ['적군', '궁수', '검사'], aiType: 'BALANCED', baseCost: 12 
     },
-    3: { 
+
+    // [Tier 1] 보스
+    'assassin_master': { 
         name: '암살자 길드장', 
-        deck: ['적군', '암살자', '방벽'], 
-        aiType: 'TRICKY', 
-        baseCost: 12
+        tier: 1, role: 'BOSS', 
+        hp: 4000, image: 'base_enemy_3', 
+        deck: ['적군', '암살자', '방벽'], aiType: 'TRICKY', baseCost: 15 
     },
-    5: { 
+
+    // [Tier 2] 예시
+    'fire_mage': { 
         name: '화염의 마법사', 
-        deck: ['검사', '방벽', '화염구'], 
-        aiType: 'TACTICAL_AOE', 
-        baseCost: 12
+        tier: 2, role: 'NORMAL', 
+        hp: 2000, image: 'base_enemy_2', 
+        deck: ['검사', '방벽', '화염구'], aiType: 'TACTICAL_AOE', baseCost: 15 
     }
 };
 
@@ -332,7 +390,7 @@ window.STARTER_DECK = STARTER_DECK;
 window.MAX_HAND = MAX_HAND;
 window.MAX_COST = MAX_COST;
 window.RECOVERY_COST = RECOVERY_COST;
-window.ENEMY_COMMANDERS = ENEMY_COMMANDERS;
 window.DEFAULT_ENEMY_COMMANDER = DEFAULT_ENEMY_COMMANDER;
 window.getEnemyStats = getEnemyStats;
 window.getMapData = getMapData;
+window.ENEMY_DATA_POOL = ENEMY_DATA_POOL;

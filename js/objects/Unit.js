@@ -1,148 +1,274 @@
 // js/objects/Unit.js
 
 class Unit extends Phaser.GameObjects.Container {
-    // [수정] 6번째 매개변수로 customStats 추가 (기본값 null)
-    constructor(scene, x, y, name, team, customStats = null) {
+    constructor(scene, x, y, name, team, stats) {
         super(scene, x, y);
-        
         this.scene = scene;
         this.name = name;
         this.team = team;
+        this.stats = stats;
+        
+        // 물리 엔진 추가
+        scene.physics.add.existing(this);
+        this.body.setCircle(15); 
+        this.body.setOffset(-15, -15); 
 
-        // 이제 customStats가 매개변수로 전달되므로 에러가 발생하지 않고,
-        // 보너스 타임 효과가 적용된 스탯을 정상적으로 사용할 수 있습니다.
-        if (customStats) {
-            // 이미 계산된 스탯이므로 복사해서 사용 (참조 끊기)
-            this.stats = JSON.parse(JSON.stringify(customStats));
-        } else {
-            // 기존 로직: customStats가 없으면 기본 데이터 로드
-            const baseStats = (team === 'ENEMY') ? getEnemyStats(name) : UNIT_STATS[name];
-            this.stats = JSON.parse(JSON.stringify(baseStats));
+        // ------------------------------------------------------------
+        // 🧬 [파츠 조립 시스템]
+        // ------------------------------------------------------------
+        this.parts = {};
+        
+        const defaultParts = { 
+            body: 'body_knight', 
+            weapon: 'weapon_sword', 
+            acc: 'acc_shield' 
+        };
+        const partConfig = { ...defaultParts, ...(stats.parts || {}) };
+
+        // 1. 액세서리
+        if (partConfig.acc) {
+            const key = `${partConfig.acc}_${team}`;
+            const accData = (typeof SVG_DATA !== 'undefined') ? SVG_DATA[partConfig.acc] : null;
+            const defaultOffset = { x: 10, y: 5 };
+            const offset = (accData && accData.offset) ? accData.offset : defaultOffset;
+
+            this.parts.acc = scene.add.sprite(offset.x, offset.y, key);
+            this.parts.acc.setDisplaySize(30, 30);
+            
+            if (accData && accData.depth) {
+                this.parts.acc.setDepth(accData.depth);
+            }
+            this.add(this.parts.acc);
         }
 
-        this.currentHp = this.stats.hp;
+        // 2. 몸통
+        if (partConfig.body) {
+            const key = `${partConfig.body}_${team}`;
+            
+            this.parts.body = scene.add.sprite(0, 0, key);
+            
+            if (this.stats.isStructure && name.includes('Base')) {
+                 this.parts.body.setDisplaySize(100, 120);
+                 this.parts.body.setOrigin(0.5, 1.0); 
+                 this.parts.body.y = 0;
+            } else {
+                 this.parts.body.setDisplaySize(40, 40);
+                 this.parts.body.setOrigin(0.5, 0.9); 
+                 this.parts.body.y = 15; 
+            }
+            
+            this.add(this.parts.body);
+        }
+
+        // 3. 무기
+        if (partConfig.weapon) {
+            const key = `${partConfig.weapon}`; 
+            
+            this.parts.weapon = scene.add.sprite(0, 0, key);
+            this.parts.weapon.setDisplaySize(35, 35);
+
+            this.parts.weapon.setOrigin(0.5, 0.9); 
+            
+            const weaponData = (typeof SVG_DATA !== 'undefined') ? SVG_DATA[partConfig.weapon] : null;
+            const wOffset = (weaponData && weaponData.offset) ? weaponData.offset : { x: 18, y: 10 };
+            this.parts.weapon.setPosition(wOffset.x, wOffset.y);
+
+            if (weaponData && weaponData.depth) {
+                this.parts.weapon.setDepth(weaponData.depth);
+            }
+
+            this.add(this.parts.weapon);
+        }
+
+        // 구조물 처리
+        if (stats.isStructure) {
+            this.body.setImmovable(true); 
+            this.body.moves = false;      
+        }
+        
+        this.bodySprite = this.parts.body;
+        this.weaponSprite = this.parts.weapon;
+        
+        this.defaultPose = {
+            body: { x: this.parts.body ? this.parts.body.x : 0, y: this.parts.body ? this.parts.body.y : 0, angle: 0 },
+            weapon: { x: this.parts.weapon ? this.parts.weapon.x : 0, y: this.parts.weapon ? this.parts.weapon.y : 0, angle: 0 }
+        };
+
+        // ------------------------------------------------------------
+        // ⚔️ 전투 변수 초기화
+        // ------------------------------------------------------------
+        this.currentHp = stats.hp;
         this.active = true;
-        this.isBase = (name === '기지');
-        this.isSpawned = true;
-        this.isStealthed = (this.stats.traits && this.stats.traits.includes('은신'));
-        
-        this.path = [];
-        this.pathTimer = 0;
+        this.isBase = false;
+        this.killCount = 0;
+        this.statusEffects = {}; 
         this.attackCooldown = 0;
-        
-        // ★ [변경] 상태이상 통합 관리 (기존 stunTimer 제거)
-        this.statusEffects = {}; // 예: { 'STUN': 0.5, 'SLOW': 2.0 }
-        
-        // 선딜레이 변수
         this.isCasting = false;
         this.castTimer = 0;
-        this.maxCastTime = this.stats.castTime || 0; 
-        this.currentTarget = null;
-        this.killCount = 0;
-
-        // 그래픽 조립
-        this.outline = scene.add.rectangle(0, 0, 50, 60, (team === 'ALLY' ? 0x00ff00 : 0xff0000), 0);
-        this.outline.setStrokeStyle(3, (team === 'ALLY' ? 0x00ff00 : 0xff0000), 1).setAlpha(0);
-        this.add(this.outline);
-
-        const shadow = scene.add.ellipse(0, 20, 30, 10, 0x000000, 0.3);
-        this.add(shadow);
-
-        const parts = SVG_MANAGER.getParts(name);
-
-        if (parts.body) {
-            this.bodySprite = scene.add.sprite(0, 0, parts.body).setDisplaySize(40, 40);
-            if (team === 'ENEMY') this.bodySprite.setTint(0xff8888);
-            else if (this.stats.color) this.bodySprite.setTint(this.stats.color);
-            this.add(this.bodySprite);
-        }
-
-        if (parts.weapon) {
-            this.weaponSprite = scene.add.sprite(15, 5, parts.weapon).setDisplaySize(30, 30).setOrigin(0.5, 0.9);
-            this.add(this.weaponSprite);
-            this.weaponAnimType = SVG_MANAGER.getWeaponAnimType(parts.weapon);
-        } else {
-            this.weaponAnimType = 'BODY'; 
-        }
-
-        if (parts.shield) {
-            this.shieldSprite = scene.add.sprite(-10, 5, parts.shield).setDisplaySize(25, 25);
-            this.add(this.shieldSprite);
-        }
-
-        if (team === 'ENEMY') this.setScale(-1, 1); 
-        if (this.isStealthed) this.setAlpha(0.5);
-
-        if (!this.isBase) {
-            this.hpBar = scene.add.rectangle(0, -25, 30, 5, 0x00ff00);
-            this.add(this.hpBar);
-        }
-
-        this.setInteractive(new Phaser.Geom.Rectangle(-25, -30, 50, 60), Phaser.Geom.Rectangle.Contains);
-        this.on('pointerover', () => { if(this.active){ this.outline.setAlpha(1); this.scene.uiManager.showUnitTooltip(this); }});
-        this.on('pointerout', () => { this.outline.setAlpha(0); this.scene.uiManager.hideUnitTooltip(); });
-
-        scene.add.existing(this);
-    }
-
-    update(dt) {
-        if (!this.active || this.currentHp <= 0) return;
-
-        // [1] 상태이상 타이머 감소 및 만료 처리
-        for (const [type, duration] of Object.entries(this.statusEffects)) {
-            if (duration > 0) {
-                this.statusEffects[type] -= dt;
-                // 시간이 다 되면 제거
-                if (this.statusEffects[type] <= 0) delete this.statusEffects[type];
-            }
-        }
-
-        // [2] 현재 걸린 CC기 확인 (행동 제약 조회)
-        const rules = this.checkCC();
-
-        // [3] 캐스팅 취소 조건 확인
-        if (rules.cancelCast && this.isCasting) {
-            this.cancelCasting();
-        }
-
-        // [4] 행동 불가 판정 (이동도 공격도 못하면 리턴)
-        // 만약 이동만 불가(ROOT)하고 공격은 가능하다면 아래 로직을 더 세분화해야 하지만,
-        // 현재 GameLogic 구조상 일단 둘 다 막히는 경우만 처리합니다.
-        if (!rules.canMove && !rules.canAttack) return;
-
-
-        // 캐스팅 진행
-        if (this.isCasting) {
-            this.castTimer -= dt;
-            if (this.castTimer <= 0) this.fireAttack(); 
-            return; 
-        }
-
-        // 이동 및 공격 로직 실행
-        // (주의: ROOT 상태일 때도 runUnitLogic이 호출되면 이동할 수 있음. 
-        // 완벽한 ROOT 구현을 위해서는 GameLogic에 rules를 전달해야 함)
-        GameLogic.runUnitLogic(this, this.scene.activeUnits, dt, this.scene.grid, this.scene.tileSize, this.scene.easystar);
-
-        if (!this.isBase && this.hpBar) {
-            const ratio = Phaser.Math.Clamp(this.currentHp / this.stats.hp, 0, 1);
-            this.hpBar.width = 30 * ratio;
-            this.hpBar.fillColor = (ratio > 0.3) ? 0x00ff00 : 0xff0000;
-        }
+        this.maxCastTime = 0;
+        this.isStealthed = (stats.traits && stats.traits.includes("은신"));
+        this.pathTimer = 0; 
+        this.isSpawned = true;
+        this.hp = stats.hp;
+        this.speed = stats.speed;
+        this.damage = stats.damage;
+        this.range = stats.range;
+        this.attackSpeed = stats.attackSpeed;
+        this.race = stats.race;
         
-        if (this.bodySprite && !this.scene.tweens.isTweening(this.bodySprite)) {
-            this.bodySprite.y = Math.sin(this.scene.time.now / 200) * 1; 
+        // ------------------------------------------------------------
+        // 2. 체력바 (통합 관리) - 텍스트 제거됨
+        // ------------------------------------------------------------
+         this.isHovered = false; // 마우스 오버 상태 추적
+        this.initHpBar();       // 체력바 초기화 메서드 호출
+
+        scene.add.existing(this); 
+        this.setInteractive(new Phaser.Geom.Circle(0, 0, 25), Phaser.Geom.Circle.Contains);
+
+        this.on('pointerover', () => {
+            if (this.active && this.scene.uiManager) {
+                this.scene.uiManager.showUnitTooltip(this);
+            }
+        });
+
+        this.on('pointerout', () => {
+            if (this.scene.uiManager) {
+                this.scene.uiManager.hideUnitTooltip();
+            }
+        });
+
+        this.sort('depth');
+        this.startIdleAnim();
+    }
+
+    startIdleAnim() {
+        if (!this.active || !this.scene) return;
+        const randomDelay = Math.random() * 1000;
+
+        this.scene.time.delayedCall(randomDelay, () => {
+            if (!this.active) return;
+            if (this.parts.body) {
+                const currentScale = this.parts.body.scaleY; 
+                this.scene.tweens.add({
+                    targets: this.parts.body,
+                    scaleY: currentScale * 0.95, 
+                    duration: 1000,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut'
+                });
+            }
+            if (this.parts.weapon) {
+                this.scene.tweens.add({
+                    targets: this.parts.weapon,
+                    angle: { from: 10, to: 20 },
+                    duration: 1000,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut'
+                });
+            }
+        }); 
+    }
+
+update(dt) {
+        if (typeof GameLogic !== 'undefined' && GameLogic.runUnitLogic) {
+            GameLogic.runUnitLogic(this, this.scene.activeUnits, dt, this.scene.grid, this.scene.tileSize, this.scene.easystar);
+        }
+
+        // 체력바 업데이트 호출
+        this.updateHpBar();
+    }
+    initHpBar() {
+        // 기지 여부 판단
+        this.isBase = (this.name.toLowerCase().includes('base') || this.stats.isStructure) && this.stats.hp > 100;
+
+        // [아이디어 2] 체력 비례 크기: 기본 30, 체력 1000당 +10, 최대 60 (기지는 80 고정)
+        const bonusWidth = Math.min((this.stats.hp / 1000) * 10, 30);
+        this.hpBarWidth = this.isBase ? 80 : (30 + bonusWidth);
+        this.hpBarHeight = this.isBase ? 10 : 5; // 두께
+        this.hpBarY = this.isBase ? -100 : -35; // 위치
+
+        // 체력바 컨테이너 (바 + 배경 + 눈금을 묶음)
+        this.hpBarContainer = this.scene.add.container(0, this.hpBarY);
+        this.add(this.hpBarContainer);
+
+        // 1. 배경 (검정 테두리 역할)
+        this.hpBarBg = this.scene.add.rectangle(0, 0, this.hpBarWidth + 2, this.hpBarHeight + 2, 0x000000);
+        this.hpBarContainer.add(this.hpBarBg);
+
+        // 2. 실제 체력바 (Graphics로 그려서 유동적으로 처리)
+        this.hpBarGraphics = this.scene.add.graphics();
+        this.hpBarContainer.add(this.hpBarGraphics);
+
+        // 3. 눈금 오버레이 (한 번만 그려두면 됨)
+        this.hpGridGraphics = this.scene.add.graphics();
+        this.hpBarContainer.add(this.hpGridGraphics);
+        
+        // [아이디어 3] 눈금 그리기 (250 단위)
+        this.drawHpGrid();
+
+        // 초기에는 숨김 (100% 상태이므로)
+        this.hpBarContainer.setVisible(false);
+    }
+
+    drawHpGrid() {
+        this.hpGridGraphics.clear();
+        this.hpGridGraphics.lineStyle(1, 0x000000, 0.8); // 1px 검은 선, 투명도 0.8
+
+        const unitHealth = 50; // 눈금 단위
+        const totalSegments = Math.floor(this.stats.hp / unitHealth);
+        
+        // 왼쪽 끝(-width/2) 부터 오른쪽 끝(+width/2) 까지
+        const startX = -this.hpBarWidth / 2;
+        
+        for (let i = 1; i < totalSegments; i++) {
+            const ratio = (i * unitHealth) / this.stats.hp;
+            if (ratio >= 1) break;
+            
+            const xPos = startX + (this.hpBarWidth * ratio);
+            // 세로선 긋기
+            this.hpGridGraphics.beginPath();
+            this.hpGridGraphics.moveTo(xPos, -this.hpBarHeight / 2);
+            this.hpGridGraphics.lineTo(xPos, this.hpBarHeight / 2);
+            this.hpGridGraphics.strokePath();
         }
     }
 
-    // ★ [신규] 현재 상태이상에 따른 제약 사항 반환
+    updateHpBar() {
+        if (!this.hpBarContainer) return;
+
+        const maxHp = this.stats.hp;
+        const currentHp = Phaser.Math.Clamp(this.currentHp, 0, maxHp);
+        const ratio = currentHp / maxHp;
+
+        // [아이디어 1] 표시 조건: 체력이 깎였거나(ratio < 1) 마우스가 위에 있을 때
+        const shouldShow = (ratio < 1.0) || (ratio > 1.0) || this.isHovered;
+        this.hpBarContainer.setVisible(shouldShow);
+
+        if (!shouldShow) return;
+
+        // 체력바 다시 그리기
+        this.hpBarGraphics.clear();
+        
+        // 색상 결정 (30% 미만 위험)
+        const color = (ratio > 0.3) ? 0x00ff00 : 0xff0000;
+        this.hpBarGraphics.fillStyle(color, 1);
+
+        // 중앙 정렬을 위해 x좌표 조정
+        const currentWidth = this.hpBarWidth * ratio;
+        // 왼쪽 정렬처럼 보이지만 중심 기준이므로, 전체 바의 왼쪽 끝에서 시작해서 currentWidth만큼 그림
+        const startX = -this.hpBarWidth / 2;
+        
+        this.hpBarGraphics.fillRect(startX, -this.hpBarHeight / 2, currentWidth, this.hpBarHeight);
+    }
+
     checkCC() {
         let result = { canMove: true, canAttack: true, cancelCast: false };
-        
-        // 걸려있는 모든 상태이상을 순회하며 가장 강력한 제약을 적용
+        if (typeof CC_RULES === 'undefined') return result;
         for (const type in this.statusEffects) {
             const rule = CC_RULES[type];
             if (!rule) continue;
-
             if (!rule.canMove) result.canMove = false;
             if (!rule.canAttack) result.canAttack = false;
             if (rule.cancelCast) result.cancelCast = true;
@@ -150,13 +276,10 @@ class Unit extends Phaser.GameObjects.Container {
         return result;
     }
 
-    // ★ [신규] 상태이상 적용 함수 (외부 호출용)
     applyCC(type, duration) {
-        // 이미 걸려있으면 더 긴 시간으로 갱신
+        if (!this.statusEffects) this.statusEffects = {};
         const current = this.statusEffects[type] || 0;
         this.statusEffects[type] = Math.max(current, duration);
-        
-        // 넉백 같은 물리적 효과는 CombatManager에서 트윈으로 처리하거나 여기서 처리
     }
 
     tryAttack(target) {
@@ -195,16 +318,17 @@ class Unit extends Phaser.GameObjects.Container {
     }
 
     playHitAnim(damage) {
-        this.each(c => { if(c.setTint && c !== this.hpBar && c !== this.outline) c.setTint(0xffffff); });
+        this.each(c => { 
+            // 체력바 배경과 체력바는 틴트 효과에서 제외
+            if(c.setTint && c !== this.hpBar && c !== this.hpBarBg) c.setTint(0xffffff); 
+        });
         this.scene.time.delayedCall(100, () => {
             if (!this.active) return;
             this.each(c => {
-                if(c.setTint && c !== this.hpBar && c !== this.outline) {
+                if(c.setTint && c !== this.hpBar && c !== this.hpBarBg) {
                     c.clearTint();
                     if(c === this.bodySprite) {
-                        if(this.isCasting) c.setTint(0xffff00); 
-                        else if(this.team === 'ENEMY') c.setTint(0xff8888);
-                        else if(this.stats.color) c.setTint(this.stats.color);
+                        this.resetTint();
                     }
                 }
             });
@@ -215,36 +339,312 @@ class Unit extends Phaser.GameObjects.Container {
 
     onAttack(target) {
         if (this.isStealthed) { this.isStealthed = false; this.setAlpha(1.0); }
-        const bx = (this.team === 'ENEMY') ? -1 : 1;
+        this.setLookingAt(target.x, target.y);
+        const bx = (this.scaleX < 0) ? -1 : 1; 
         this.scene.tweens.add({ targets: this, scaleX: bx * 1.1, scaleY: 0.9, duration: 100, yoyo: true, ease: 'Back.easeOut' });
-        switch (this.weaponAnimType) {
+        
+        switch (this.stats.weaponAnimType || 'SWING') {
             case 'SWING': this.playSwingAnim(); break;
+            case 'HEAVY_SWING': this.playHeavySwingAnim(); break; 
             case 'STAB':  this.playStabAnim(); break;
             case 'SHOOT': this.playShootAnim(); break;
             case 'CAST':  this.playCastAnim(); break;
-            case 'BODY':  this.playBodyAnim(); break;
             default:      this.playSwingAnim(); break;
         }
         this.dealDamage(target);
     }
 
-    playSwingAnim() { if(this.weaponSprite) this.scene.tweens.add({ targets: this.weaponSprite, angle: { from: -45, to: 120 }, duration: 120, yoyo: true, ease: 'Back.easeOut' }); }
-    playStabAnim() { if(this.weaponSprite) this.scene.tweens.add({ targets: this.weaponSprite, x: '+=20', duration: 50, yoyo: true, ease: 'Power2' }); }
-    playShootAnim() { if(this.weaponSprite) this.scene.tweens.add({ targets: this.weaponSprite, x: '-=8', angle: { from: 0, to: -20 }, duration: 100, yoyo: true }); }
-    playCastAnim() { if(this.weaponSprite) this.scene.tweens.add({ targets: this.weaponSprite, y: '-=15', angle: { from: 0, to: -30 }, duration: 250, yoyo: true }); }
-    playBodyAnim() { if(this.bodySprite) this.scene.tweens.add({ targets: this.bodySprite, x: (this.team === 'ALLY' ? 15 : -15), duration: 80, yoyo: true, ease: 'Bounce.easeOut' }); }
+    playSwingAnim() {
+        if (!this.active || !this.scene) return;
+        if (!this.parts.weapon) return;
+        this.scene.tweens.killTweensOf(this.parts.weapon);
+        const defW = this.defaultPose.weapon;
+        this.parts.weapon.setPosition(defW.x, defW.y);
+        this.parts.weapon.setAngle(defW.angle);
+        if (this.parts.body) {
+            this.scene.tweens.killTweensOf(this.parts.body);
+            const defB = this.defaultPose.body;
+            this.parts.body.setPosition(defB.x, defB.y);
+            this.parts.body.setAngle(defB.angle);
+        }
+        this.scene.tweens.add({
+            targets: this.parts.weapon,
+            angle: -45, 
+            duration: 150,
+            ease: 'Quad.easeOut',
+            onComplete: () => {
+                this.createWeaponTrail();
+                this.scene.tweens.add({
+                    targets: this.parts.weapon,
+                    angle: 110, 
+                    duration: 50,
+                    ease: 'Back.easeOut',
+                    onComplete: () => {
+                        this.scene.tweens.add({
+                            targets: this.parts.weapon,
+                            angle: defW.angle,
+                            duration: 300,
+                            ease: 'Quad.easeOut',
+                            onComplete: () => {
+                                this.startIdleAnim();
+                            }
+                        });
+                    }
+                });
+            }
+        });
+        if (this.parts.body) {
+            this.scene.tweens.add({
+                targets: this.parts.body,
+                x: '-=5', 
+                angle: -10,
+                duration: 150,
+                onComplete: () => {
+                    this.scene.tweens.add({
+                        targets: this.parts.body,
+                        x: '+=15', 
+                        angle: 20,
+                        duration: 50,
+                        ease: 'Back.easeOut',
+                        yoyo: true,
+                        hold: 100,
+                        onComplete: () => {
+                            this.parts.body.x = this.defaultPose.body.x;
+                            this.parts.body.angle = this.defaultPose.body.angle;
+                        }
+                    });
+                }
+            });
+        }
+    }
+
+    playStabAnim() {
+        if (!this.active || !this.scene) return;
+        if (!this.parts.weapon) return;
+        this.scene.tweens.killTweensOf(this.parts.weapon);
+        const defW = this.defaultPose.weapon; 
+        this.parts.weapon.setPosition(defW.x, defW.y);
+        this.parts.weapon.setAngle(defW.angle);
+        if (this.parts.body) {
+            this.scene.tweens.killTweensOf(this.parts.body);
+            const defB = this.defaultPose.body;
+            this.parts.body.setPosition(defB.x, defB.y);
+            this.parts.body.setAngle(defB.angle);
+        }
+        this.scene.tweens.add({
+            targets: this.parts.weapon,
+            x: defW.x - 10, 
+            duration: 100,
+            ease: 'Cubic.easeOut',
+            onComplete: () => {
+                this.parts.weapon.angle = 90; 
+                this.scene.tweens.add({
+                    targets: this.parts.weapon,
+                    x: defW.x + 40, 
+                    duration: 60,   
+                    ease: 'Expo.easeOut',
+                    yoyo: true,
+                    hold: 50,
+                    onComplete: () => {
+                        this.parts.weapon.angle = defW.angle;
+                        this.parts.weapon.x = defW.x;
+                        if (!this.parts.body) this.startIdleAnim();
+                    }
+                });
+            }
+        });
+        if (this.parts.body) {
+            this.scene.tweens.add({
+                targets: this.parts.body,
+                x: this.defaultPose.body.x + 15,
+                duration: 60,
+                delay: 100, 
+                yoyo: true,
+                ease: 'Expo.easeOut',
+                onComplete: () => {
+                    this.parts.body.x = this.defaultPose.body.x;
+                    this.startIdleAnim();
+                }
+            });
+        }
+    }
+
+    playShootAnim() { 
+        if (!this.active || !this.scene) return;
+        if (this.parts.weapon) {
+            this.scene.tweens.killTweensOf(this.parts.weapon);
+            this.parts.weapon.setPosition(this.defaultPose.weapon.x, this.defaultPose.weapon.y);
+            this.parts.weapon.setAngle(this.defaultPose.weapon.angle);
+        }
+        if (this.parts.body) {
+            this.scene.tweens.killTweensOf(this.parts.body);
+            this.parts.body.setPosition(this.defaultPose.body.x, this.defaultPose.body.y);
+            this.parts.body.setAngle(this.defaultPose.body.angle);
+        }
+        const duration = 150;
+        if (this.parts.weapon) {
+            this.scene.tweens.add({ 
+                targets: this.parts.weapon, 
+                x: { from: 15, to: 10 }, 
+                angle: { from: 0, to: -25 }, 
+                duration: duration, 
+                yoyo: true,
+                onComplete: () => {
+                    if (this.parts.weapon) {
+                        this.parts.weapon.x = this.defaultPose.weapon.x;
+                        this.parts.weapon.angle = this.defaultPose.weapon.angle;
+                    }
+                }
+            }); 
+        }
+        if (this.parts.body) {
+            this.scene.tweens.add({
+                targets: this.parts.body,
+                x: { from: 0, to: -5 }, 
+                angle: { from: 0, to: -5 }, 
+                duration: duration,
+                yoyo: true,
+                onComplete: () => {
+                    if (this.parts.body) {
+                        this.parts.body.x = this.defaultPose.body.x;
+                        this.parts.body.angle = this.defaultPose.body.angle;
+                    }
+                    this.startIdleAnim();
+                }
+            });
+        }
+    }
+
+    playCastAnim() { 
+        if (!this.active || !this.scene) return;
+        const baseScaleX = (this.defaultPose.body.scaleX !== undefined) 
+                           ? this.defaultPose.body.scaleX 
+                           : this.parts.body.scaleX;
+        const baseScaleY = (this.defaultPose.body.scaleY !== undefined)
+                           ? this.defaultPose.body.scaleY
+                           : this.parts.body.scaleY;
+        if (this.parts.body) {
+            this.scene.tweens.killTweensOf(this.parts.body);
+            this.parts.body.setPosition(this.defaultPose.body.x, this.defaultPose.body.y);
+            this.parts.body.setAngle(this.defaultPose.body.angle);
+            this.parts.body.setScale(baseScaleX, baseScaleY);
+        }
+        if (this.parts.weapon) {
+            this.scene.tweens.killTweensOf(this.parts.weapon);
+            this.parts.weapon.setPosition(this.defaultPose.weapon.x, this.defaultPose.weapon.y);
+            this.parts.weapon.setAngle(this.defaultPose.weapon.angle);
+        }
+        const duration = 300;
+        if (this.parts.weapon) {
+            this.scene.tweens.add({ 
+                targets: this.parts.weapon, 
+                y: { from: this.defaultPose.weapon.y, to: this.defaultPose.weapon.y - 20 }, 
+                angle: { from: 0, to: -45 }, 
+                duration: duration, 
+                yoyo: true,
+                ease: 'Sine.easeInOut',
+                onComplete: () => {
+                    if (this.parts.weapon) {
+                        this.parts.weapon.y = this.defaultPose.weapon.y;
+                        this.parts.weapon.angle = this.defaultPose.weapon.angle;
+                    }
+                }
+            }); 
+        }
+        if (this.parts.body) {
+            this.scene.tweens.add({
+                targets: this.parts.body,
+                y: { from: this.defaultPose.body.y, to: this.defaultPose.body.y - 10 }, 
+                scaleX: { from: baseScaleX, to: baseScaleX * 0.95 }, 
+                duration: duration, 
+                yoyo: true,
+                onComplete: () => {
+                    if (this.parts.body) {
+                        this.parts.body.y = this.defaultPose.body.y;
+                        this.parts.body.setScale(baseScaleX, baseScaleY);
+                    }
+                    this.startIdleAnim();
+                }
+            });
+        }
+    }
+
+    playHeavySwingAnim() {
+        if (!this.active || !this.scene) return; 
+        if (this.parts.weapon) {
+            this.scene.tweens.killTweensOf(this.parts.weapon);
+            this.parts.weapon.setAngle(this.defaultPose.weapon.angle);
+        }
+        if (this.parts.body) {
+            this.scene.tweens.killTweensOf(this.parts.body);
+            this.parts.body.setAngle(this.defaultPose.body.angle);
+        }
+        const duration = 250;
+        if(this.parts.weapon) {
+            this.scene.tweens.add({ 
+                targets: this.parts.weapon, 
+                angle: { from: -100, to: 160 }, 
+                duration: duration, 
+                yoyo: true, 
+                ease: 'Cubic.easeIn',
+                onStart: () => {
+                    this.createWeaponTrail(); 
+                },
+                onComplete: () => {
+                    if (this.parts.weapon) {
+                        this.parts.weapon.setAngle(this.defaultPose.weapon.angle);
+                    }
+                }
+            }); 
+        }
+        if(this.parts.body) {
+            this.scene.tweens.add({
+                targets: this.parts.body,
+                angle: { from: -20, to: 30 },
+                duration: duration,
+                yoyo: true,
+                onComplete: () => {
+                    if (this.parts.body) {
+                        this.parts.body.setAngle(this.defaultPose.body.angle);
+                    }
+                    this.startIdleAnim();
+                }
+            });
+        }
+    }
+
+    createWeaponTrail() { return; }
 
     dealDamage(target) {
-        if ((this.stats.attackType || 'SLASH') === 'SHOOT' && typeof Projectile !== 'undefined') {
+        if ((this.stats.attackType || 'SINGLE') === 'SHOOT' && typeof Projectile !== 'undefined') {
             this.scene.activeProjectiles.push(new Projectile(this.scene, this, target));
-        } else {
-            if (this.scene.applyDamage) this.scene.applyDamage(this, target, this.stats.damage);
-            if (this.scene.artifactManager) this.scene.artifactManager.onDealDamage(this, target, this.stats.damage);
+        } 
+        else {
+            if (target.team === this.team) {
+                const healAmount = this.stats.damage; 
+                target.currentHp = Math.min(target.currentHp + healAmount, target.stats.hp);
+                if (this.scene.combatManager) {
+                    this.scene.combatManager.showFloatingText(target.x, target.y - 40, `+${healAmount}`, '#00ff00');
+                }
+            } else {
+                if (this.scene.combatManager && this.scene.combatManager.performAttack) {
+                    this.scene.combatManager.performAttack(this, target);
+                } 
+                else if (this.scene.applyDamage) {
+                    this.scene.applyDamage(this, target, this.stats.damage);
+                }
+                if (this.scene.artifactManager) {
+                    this.scene.artifactManager.onDealDamage(this, target, this.stats.damage);
+                }
+            }
         }
     }
 
     setLookingAt(tx, ty) {
-        if (tx < this.x) { this.setScale(-1, 1); if (this.hpBar) this.hpBar.setScale(-1, 1); }
-        else { this.setScale(1, 1); if (this.hpBar) this.hpBar.setScale(1, 1); }
+        if (tx < this.x) { 
+            this.setScale(-1, 1); 
+        } else { 
+            this.setScale(1, 1); 
+        }
     }
 }

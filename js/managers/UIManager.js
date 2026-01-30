@@ -93,6 +93,9 @@ class UIManager {
                     this.timeDisplay.innerText = (e.target.value/100).toFixed(1)+"s";
                 }
                 this.scene.updateGhostSimulation();
+if (this.scene.cardManager && this.scene.cardManager.updateHandCosts) {
+                    this.scene.cardManager.updateHandCosts();
+                }
             }
         });
     }
@@ -186,18 +189,16 @@ class UIManager {
     }
 
     // ============================================================
-    // 🛡️ 유닛 툴팁 (새로 추가됨)
+    // 🛡️ 유닛 툴팁
     // ============================================================
     showUnitTooltip(unit) {
         const tooltip = document.getElementById('unit-tooltip');
         if (!tooltip) return;
 
-        // 데이터 구성
         const stats = unit.stats;
         const hpPercent = Math.floor((unit.currentHp / stats.hp) * 100);
         const traits = stats.traits && stats.traits.length > 0 ? stats.traits.join(', ') : '없음';
 
-        // HTML 내용 업데이트
         tooltip.innerHTML = `
             <div class="tooltip-header" style="color: ${unit.team === 'ALLY' ? '#00ff00' : '#ff4444'}">
                 <b>${unit.name}</b> (${unit.team === 'ALLY' ? '아군' : '적군'})
@@ -213,7 +214,6 @@ class UIManager {
 
         tooltip.style.display = 'block';
         
-        // 마우스 위치에 따라 툴팁 이동
         this.scene.input.on('pointermove', (pointer) => {
             tooltip.style.left = (pointer.event.pageX + 15) + 'px';
             tooltip.style.top = (pointer.event.pageY + 15) + 'px';
@@ -225,4 +225,13 @@ class UIManager {
         if (tooltip) tooltip.style.display = 'none';
         this.scene.input.off('pointermove');
     }
-} // 여기가 클래스 끝!
+
+
+toggleArtifactUI(show) {
+        const artifactContainer = document.getElementById('artifact-container');
+        if (artifactContainer) {
+            // flex 레이아웃을 유지하면서 끄고 켜기
+            artifactContainer.style.display = show ? 'flex' : 'none';
+        }
+    }
+}

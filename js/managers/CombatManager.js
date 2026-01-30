@@ -4,6 +4,49 @@ class CombatManager {
     constructor(scene) {
         this.scene = scene;
     }
+performAttack(attacker, target) {
+        if (!attacker.active || !target.active) return;
+        
+        if (attacker.tryAttack) attacker.tryAttack(target); 
+
+        const type = attacker.stats.attackType || 'SINGLE';
+        const angle = Phaser.Math.Angle.Between(attacker.x, attacker.y, target.x, target.y);
+
+        if (type === 'SPLASH') {
+            const radius = attacker.stats.splashRadius || 80;
+            
+            // ★ [수정] 데이터에서 각도를 가져오거나 기본값 120도 사용
+            const angleVal = attacker.stats.splashAngle || 120; 
+            const fanAngleRad = Phaser.Math.DegToRad(angleVal);
+
+            // ★ [수정] 6번째 인자로 fanAngleRad를 전달!
+            const color = (attacker.team === 'ALLY') ? 0x00ffcc : 0xff3333;
+            this.showFanEffect(attacker.x, attacker.y, radius, angle, color, fanAngleRad);
+
+            // (A) 주 타겟 데미지
+            this.applyDamage(attacker, target, attacker.stats.damage);
+            
+            // (B) 범위 데미지 판정
+            if (this.scene.activeUnits) {
+                this.scene.activeUnits.forEach(enemy => {
+                    if (enemy.active && enemy.team !== attacker.team && enemy !== target) {
+                        const dist = Phaser.Math.Distance.Between(attacker.x, attacker.y, enemy.x, enemy.y);
+                        if (dist <= (attacker.stats.range + radius)) {
+                            const angleToEnemy = Phaser.Math.Angle.Between(attacker.x, attacker.y, enemy.x, enemy.y);
+                            
+                            // 전달받은 fanAngleRad를 사용해 판정
+                            if (Math.abs(Phaser.Math.Angle.Wrap(angleToEnemy - angle)) <= fanAngleRad / 2) {
+                                this.applyDamage(attacker, enemy, attacker.stats.damage);
+                                this.createExplosion(enemy.x, enemy.y, 30, 0xffffff); 
+                            }
+                        }
+                    }
+                });
+            }
+        } else {
+            this.applyDamage(attacker, target, attacker.stats.damage);
+        }
+    }
 
     applyDamage(attacker, target, damage) {
         if (!target.active || target.currentHp <= 0) return;
@@ -126,6 +169,10 @@ class CombatManager {
         } else { this.createExplosion(plan.x, plan.y, stats.radius, stats.color); }
     }
 
+showFanEffect(x, y, radius, angle, color, fanAngle) {
+        return; // 이펙트 제거 (아무것도 안 함)
+    }
+    
     createExplosion(x, y, radius, color) {
         const c = this.scene.add.circle(x, y, 10, color, 0.6).setDepth(150);
         this.scene.tweens.add({ targets: c, scale: radius / 10, alpha: 0, duration: 500, onComplete: () => c.destroy() });

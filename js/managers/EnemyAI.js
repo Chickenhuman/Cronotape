@@ -8,21 +8,24 @@ class EnemyAI {
     // ============================================================
     // ★ [AI System] 적군 웨이브 생성 (메인 함수)
     // ============================================================
-    generateWave(stage) {
+generateWave(stage) {
+        // ★ [Fix] stageNum 변수 정의 추가 (이 줄이 없어서 에러가 났습니다)
+        const stageNum = parseInt(stage) || 1;
         // 기존 BattleScene의 enemyWave 배열 초기화
         this.scene.enemyWave = [];
 
-        const stageNum = parseInt(stage);
-        let cmdData = ENEMY_COMMANDERS[stageNum];
+        // ★ [핵심 변경] BattleScene에서 로드한 '현재 적' 데이터를 가져옵니다.
+        let cmdData = this.scene.currentEnemyData;
 
+        // 안전장치
         if (!cmdData) {
-            console.warn(`[AI] Stage ${stageNum} 데이터 없음. 기본값 사용.`);
-            cmdData = DEFAULT_ENEMY_COMMANDER;
+            console.warn("[AI] 현재 적군 데이터가 없습니다. (BattleScene 로드 실패?)");
+            return;
         }
 
         const enemyDeck = cmdData.deck;
         // 라운드 난이도 반영
-        let aiCost = cmdData.baseCost + (stageNum * 2) + (this.scene.currentRound - 1) * 2;
+        let aiCost = cmdData.baseCost + (stageNum * 2);
 
         this.scene.addLog(`[AI] ${cmdData.name} 행동 개시 (Cost: ${aiCost})`, "log-red");
 

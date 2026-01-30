@@ -17,8 +17,7 @@
     <div id="artifact-container" class="artifact-container">
         </div>
 
-    <div id="ui-top-bar" class="ui-overlay">
-        
+<div id="ui-top-bar" class="ui-overlay">
         <div class="info-group">
             <div id="cost-display">⚡ 10 / 50</div>
         </div>
@@ -29,17 +28,17 @@
             <span id="time-display">0.0s</span>
         </div>
 
-        <div class="control-group">
-            <button id="btn-reset" class="btn-warning">↺ Reset</button>
-            
-            <div class="speed-controls" style="display:none;" id="speed-panel">
-                <button id="btn-pause" class="speed-btn">❚❚</button>
-                <button id="btn-1x" class="speed-btn active">▶</button>
-                <button id="btn-2x" class="speed-btn">⏩</button>
-            </div>
-            
-            <button id="btn-turn-end" class="btn-primary">GO!</button>
-        </div>
+<div class="control-group">
+    <button id="btn-reset" class="btn-warning">↺ Reset</button>
+    
+    <div class="speed-controls" style="display:none;" id="speed-panel">
+        <button id="btn-pause" class="speed-btn">⏸</button>
+        <button id="btn-1x" class="speed-btn active">▶</button>
+        <button id="btn-2x" class="speed-btn">⏩</button>
+    </div>
+
+    <button id="btn-turn-end" class="btn-primary">GO!</button>
+</div>
     </div>
 
     <div id="ui-bottom-bar" class="ui-overlay">
@@ -106,8 +105,10 @@
             panel.style.display = (panel.style.display === 'none') ? 'block' : 'none';
         };
     </script>
+    <script src="js/scenes/LoadingScene.js"></script> ```
 <script src="js/data.js"></script>
-    
+    <script src="js/data/SVGData.js"></script>
+<script src="js/managers/SVGManager.js"></script>
 <script src="js/objects/Unit.js"></script>
 <script src="js/objects/Projectile.js"></script>
 <script src="js/managers/DataManager.js"></script> 
@@ -120,7 +121,6 @@
 <script src="js/managers/CombatManager.js"></script>
 
 <script src="js/managers/UIManager.js"></script> 
-<script src="js/managers/SVGManager.js"></script>
 <script src="js/managers/GhostSimulator.js"></script>
 <script src="js/managers/ArtifactManager.js"></script>
 <div id="unit-tooltip"></div>

@@ -386,26 +386,27 @@ class CardDeckManager {
     }
 // js/managers/CardDeckManager.js 내부
 // ★ [수정] 카드 생성 함수 (보너스 타임 표시 기능 추가됨)
+ // [최종 수정] DOM 요소 생성 및 데이터 바인딩 함수 (기존 기능 100% 유지 + dataset 추가)
     createCardElement(cardStr) {
         const [type, name] = cardStr.split('-');
         
-        // 현재 적용된 스탯 가져오기 (BattleScene에 함수가 없으면 기본값 사용 안전장치)
+        // [1] 스탯 가져오기 (안전장치 포함)
         let finalStat;
         if (this.scene && typeof this.scene.getAdjustedStats === 'function') {
             finalStat = this.scene.getAdjustedStats(type, name);
         } else {
             const base = (type === 'Unit') ? UNIT_STATS[name] : SKILL_STATS[name];
-            finalStat = JSON.parse(JSON.stringify(base));
+            finalStat = base ? JSON.parse(JSON.stringify(base)) : { cost: 0, image: '', rarity: 'COMMON' };
         }
         
-        // 파일명 및 경로 자동 매칭
+        // [2] 파일명 및 경로 자동 매칭
         let fileName = name;
         if (finalStat.image) fileName = finalStat.image.replace('img_', '');
         
-        // 예외 처리용 매퍼
         const fileMapper = {
             '검사': 'swordman', '궁수': 'archer', '힐러': 'healer', '방벽': 'wall',
-            '화염구': 'fireball', '돌멩이': 'stone', '방어막': 'shield', '얼음': 'ice'
+            '화염구': 'fireball', '돌멩이': 'stone', '방어막': 'shield', '얼음': 'ice',
+            '암살자': 'assassin', '적군': 'enemy'
         };
         if (fileMapper[name]) fileName = fileMapper[name];
         
@@ -414,15 +415,11 @@ class CardDeckManager {
         const rarity = finalStat.rarity || 'COMMON';
 
         // --------------------------------------------------------
-        // 툴팁 내용 자동 생성
+        // [3] 툴팁 내용 생성 (기존 로직 유지)
         // --------------------------------------------------------
         const statLabels = {
-            cost: '비용',
-            damage: '공격력',
-            hp: '체력',
-            range: '사거리',
-            duration: '지속',
-            value: '수치'
+            cost: '비용', damage: '공격력', hp: '체력',
+            range: '사거리', duration: '지속', value: '수치'
         };
 
         let tooltipRows = '';
@@ -436,17 +433,16 @@ class CardDeckManager {
             }
         });
 
-        // 설명 텍스트
         if (finalStat.desc) {
             tooltipRows += `<div class="tooltip-desc">${finalStat.desc}</div>`;
         }
         
-        // ★ [소프트 코딩] 보너스 효과 텍스트 생성
-        const bonusText = this.getBonusText(finalStat.bonusEffect);
+        // 보너스 효과 텍스트 생성 (getBonusText 메서드가 있다고 가정)
+        const bonusText = (this.getBonusText && finalStat.bonusEffect) ? this.getBonusText(finalStat.bonusEffect) : '';
 
         // --------------------------------------------------------
-
-        // 배지 생성
+        // [4] 배지 및 태그 생성
+        // --------------------------------------------------------
         let statsHtml = '';
         if (type === 'Unit') {
             statsHtml = `<div class="stat-badge stat-atk">${finalStat.damage}</div>
@@ -457,11 +453,10 @@ class CardDeckManager {
         if (finalStat.race) traitsHtml += `<span class="trait-tag tag-race">${finalStat.race}</span>`;
         if (finalStat.traits) finalStat.traits.forEach(t => traitsHtml += `<span class="trait-tag tag-trait">${t}</span>`);
 
-        // ★ [추가] 보너스 타임 표시 배지 (카드 상단에 표시)
+        // 보너스 타임 표시 배지
         let timeBonusHtml = '';
         if (finalStat.bonusTime) {
             const [start, end] = finalStat.bonusTime;
-            // 예: "⏱ 0~3s"
             timeBonusHtml = `
                 <div class="time-bonus-badge" style="
                     position: absolute; top: -8px; right: -8px;
@@ -474,11 +469,19 @@ class CardDeckManager {
             `;
         }
 
+        // --------------------------------------------------------
+        // [5] DOM 요소 생성 및 조립
+        // --------------------------------------------------------
         const div = document.createElement('div');
         div.className = 'card card-in-viewer'; 
 
+        // ★ [필수 수정] 이것이 없어서 에러가 났었습니다!
+        div.dataset.unitName = name; 
+        div.dataset.cardType = type;
+
         div.innerHTML = `
-            ${timeBonusHtml} <img src="${imgPath}" class="card-bg-img" onerror="this.src='assets/noimg.png';">
+            ${timeBonusHtml} 
+            <img src="${imgPath}" class="card-bg-img" onerror="this.src='assets/noimg.png';">
             <div class="card-frame ${frameClass}"></div>
             <div class="card-cost">${finalStat.cost}</div>
             <div class="card-name">${name}</div>
@@ -531,5 +534,57 @@ class CardDeckManager {
         }
 
         return `${name} ${sign}${val}${unit}`;
+    }
+ // [수정 완료] 유닛/스킬 구분하여 코스트 업데이트 (에러 방지)
+    updateHandCosts() {
+        const handArea = document.getElementById('hand-area');
+        if (!handArea) return;
+
+        // DOM 요소 자식들을 순회
+        Array.from(handArea.children).forEach(cardDiv => {
+            const unitName = cardDiv.dataset.unitName; 
+            const cardType = cardDiv.dataset.cardType; // ★ 카드 타입(Unit/Skill) 확인
+            
+            if (!unitName || !cardType) return;
+
+            // 1. 기본 코스트 가져오기 (타입에 따라 다르게 조회)
+            let baseCost = 0;
+            if (cardType === 'Unit') {
+                // 유닛이면 UNIT_STATS 확인
+                if (UNIT_STATS[unitName]) baseCost = UNIT_STATS[unitName].cost;
+            } else {
+                // 스킬이면 SKILL_STATS 확인
+                if (SKILL_STATS && SKILL_STATS[unitName]) baseCost = SKILL_STATS[unitName].cost;
+            }
+
+            // 2. 실시간 코스트 계산
+            let currentCost = baseCost;
+            
+            // ★ 유닛일 경우에만 시간 할인 계산 (스킬은 보통 고정 비용)
+            if (cardType === 'Unit' && this.scene && typeof this.scene.getRealTimeCost === 'function') {
+                const realTimeCost = this.scene.getRealTimeCost(unitName);
+                // getRealTimeCost가 0을 반환하면(데이터 없음 등) 덮어쓰지 않음
+                if (realTimeCost !== undefined) currentCost = realTimeCost;
+            }
+
+            // 3. UI 업데이트
+            const costEl = cardDiv.querySelector('.card-cost');
+            if (costEl) {
+                costEl.innerText = currentCost;
+
+                // 색상 변경 로직
+                if (currentCost < baseCost) {
+                    costEl.style.color = '#00ff00'; // 할인: 초록색
+                    costEl.style.transform = 'scale(1.2)';
+                    costEl.style.fontWeight = 'bold';
+                } else if (currentCost > baseCost) {
+                    costEl.style.color = '#ff0000'; // 비쌈: 빨간색
+                } else {
+                    costEl.style.color = ''; // 기본: 원래대로
+                    costEl.style.transform = '';
+                    costEl.style.fontWeight = '';
+                }
+            }
+        });
     }
 }

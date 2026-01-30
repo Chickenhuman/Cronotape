@@ -209,7 +209,52 @@ class DataManager {
             currentDistance: 0 // 초기화
         };
         
+// ★ [핵심] 맵 생성 직후, 적군 배정 규칙 실행
+        this.assignEnemiesToMap(this.campaign.nodes, stage);
+
         this.saveData();
+    }
+
+// ★ [신규] 적군 배정 규칙 엔진 (소프트 코딩의 핵심)
+    assignEnemiesToMap(nodes, stage) {
+        // 1. 현재 스테이지에서 등장 가능한 적 풀(Pool) 필터링
+        const pool = Object.entries(window.ENEMY_DATA_POOL || {});
+        
+        // 예: 스테이지 1이면 Tier 1 적들만 후보로 선정
+        const candidates = {
+            'NORMAL': pool.filter(([id, data]) => data.tier === stage && data.role === 'NORMAL'),
+            'ELITE': pool.filter(([id, data]) => data.tier === stage && data.role === 'ELITE'),
+            'BOSS': pool.filter(([id, data]) => data.tier === stage && data.role === 'BOSS')
+        };
+
+        // 2. 각 노드를 순회하며 적 배정
+        nodes.forEach(node => {
+            // 이미 배정되었거나 적이 없는 노드는 패스
+            if (node.enemyId || ['START', 'SHOP', 'EVENT', 'EMPTY'].includes(node.type)) return;
+
+            let targetPool = [];
+
+            // [규칙 1] 노드 타입에 따른 기본 배정
+            if (node.type === 'BOSS') {
+                targetPool = candidates['BOSS'];
+            } else if (node.type === 'ELITE') {
+                targetPool = candidates['ELITE'];
+            } else {
+                targetPool = candidates['NORMAL'];
+            }
+
+            // [규칙 2] (예시) 맵의 절반 이상(후반부) 갔을 때는 더 강한 적 등장 확률 증가
+            // if (node.x > this.campaign.mapWidth * 0.5 && Math.random() < 0.3) { ... }
+
+            // 3. 풀에서 랜덤 선택하여 ID 저장
+            if (targetPool.length > 0) {
+                const pick = targetPool[Math.floor(Math.random() * targetPool.length)];
+                node.enemyId = pick[0]; // ID 저장 (예: 'goblin_rookie')
+            } else {
+                // 후보가 없으면 기본값 (안전장치)
+                node.enemyId = 'goblin_rookie'; 
+            }
+        });
     }
 
     connectNodes(n1, n2, edges) {

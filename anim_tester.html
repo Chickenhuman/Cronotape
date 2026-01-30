@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Chrono Tape - SVG Visual Editor</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <style>
+        body { background: #1a1a1a; color: #eee; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; margin: 0; overflow: hidden; }
+        
+        /* 왼쪽: 게임 화면 */
+        #game-wrapper { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #222; position: relative; }
+        #game-container { box-shadow: 0 0 30px rgba(0,0,0,0.5); border: 2px solid #444; position: relative; }
+        
+        /* ★ 로딩 스크린 스타일 */
+        #loading-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 100;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: #00ffcc; font-size: 24px; font-weight: bold;
+            transition: opacity 0.5s;
+        }
+        .spinner {
+            width: 40px; height: 40px; border: 4px solid #333; border-top: 4px solid #00ffcc; border-radius: 50%;
+            margin-bottom: 20px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* 오른쪽: 에디터 패널 */
+        #editor-panel { width: 350px; background: #2a2a2a; border-left: 1px solid #444; padding: 20px; display: flex; flex-direction: column; gap: 20px; box-shadow: -5px 0 15px rgba(0,0,0,0.3); z-index: 10; overflow-y: auto; }
+        
+        h2 { margin: 0 0 10px 0; font-size: 18px; color: #00ffcc; border-bottom: 2px solid #444; padding-bottom: 10px; }
+        h3 { margin: 0 0 5px 0; font-size: 14px; color: #aaa; }
+        
+        .info-card { background: #333; padding: 15px; border-radius: 8px; border: 1px solid #444; transition: 0.2s; }
+        .info-card.active { border-color: #00ffcc; background: #3a3a3a; box-shadow: 0 0 10px rgba(0, 255, 204, 0.1); }
+        
+        .coord-display { font-family: 'Consolas', monospace; font-size: 13px; color: #fff; background: #111; padding: 10px; border-radius: 4px; margin-top: 5px; border: 1px solid #555; cursor: pointer; position: relative; white-space: pre-wrap; line-height: 1.4; }
+        .coord-display:hover { background: #000; border-color: #888; }
+        .coord-display::after { content: "Click to Copy"; position: absolute; right: 5px; top: 10px; font-size: 10px; color: #666; display: none; }
+        .coord-display:hover::after { display: block; }
+
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        button { padding: 10px; background: #444; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; transition: 0.2s; }
+        button:hover { background: #555; }
+        button:active { transform: translateY(1px); }
+        button.primary { background: #0066cc; }
+        button.danger { background: #cc3333; }
+
+        input[type=range] { width: 100%; margin: 10px 0; cursor: pointer; }
+        .val-label { float: right; color: #00ffcc; font-weight: bold; }
+
+        #status-msg { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: #00ffcc; padding: 10px 20px; border-radius: 20px; font-size: 14px; pointer-events: none; opacity: 0; transition: opacity 0.3s; z-index: 200; }
+    </style>
+</head>
+<body>
+
+    <div id="game-wrapper">
+        <div id="game-container">
+            <div id="loading-screen">
+                <div class="spinner"></div>
+                <div id="loading-text">리소스 생성 중...</div>
+            </div>
+        </div>
+        <div id="status-msg">코드 복사 완료!</div>
+    </div>
+
+    <div id="editor-panel">
+        <div>
+            <h2>🛠️ SVG Visual Editor</h2>
+            <p style="font-size: 12px; color: #888; margin-bottom: 20px;">
+                1. 드래그로 <b>위치(Offset)</b> 잡기<br>
+                2. 슬라이더로 <b>깊이(Depth)</b> 조절<br>
+                3. 버튼으로 <b>모션 확인</b>
+            </p>
+        </div>
+
+        <div id="part-info" class="info-card">
+            <h3>🎯 Selected Part</h3>
+            <div style="font-size: 12px; color: #aaa; margin-bottom: 5px;" id="part-name">파츠를 선택하세요</div>
+            
+            <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 10px;">
+                <label style="font-size:12px; color:#ddd;">Depth (Z-index) <span id="depth-val" class="val-label">0</span></label>
+                <input type="range" id="depth-slider" min="-50" max="50" step="1" value="0" oninput="updateDepth(this.value)">
+            </div>
+
+            <h3>Generated Code</h3>
+            <div class="coord-display" id="code-output" onclick="copyCode()">
+                (설정값 대기중)
+            </div>
+        </div>
+
+        <div class="info-card">
+            <h3>🎬 Animation Test</h3>
+            <div class="btn-group">
+                <button class="primary" onclick="playAnim('SWING')">⚔️ Swing</button>
+                <button class="primary" onclick="playAnim('HEAVY')">💪 Heavy</button>
+                <button class="primary" onclick="playAnim('STAB')">🗡️ Stab</button>
+                <button class="primary" onclick="playAnim('SHOOT')">🏹 Shoot</button>
+                <button class="primary" onclick="playAnim('CAST')">🔮 Cast</button>
+                <button class="danger" onclick="resetPose()">⏹ Reset</button>
+            </div>
+        </div>
+
+        <div class="info-card">
+            <h3>🛡️ Change Loadout</h3>
+            <div class="btn-group">
+                <button onclick="changeLoadout('weapon_sword', 'acc_shield')">기사 (방패)</button>
+                <button onclick="changeLoadout('weapon_greatsword', null)">광전사 (대검)</button>
+                <button onclick="changeLoadout('weapon_bow', null)">궁수 (활)</button>
+                <button onclick="changeLoadout('weapon_staff', 'acc_book')">마법사 (책)</button>
+                <button onclick="changeLoadout('weapon_dagger', null)">암살자 (단검)</button>
+            </div>
+        </div>
+        
+        <div class="info-card">
+            <h3>🔍 Zoom View</h3>
+            <input type="range" min="1" max="5" step="0.5" value="2.0" oninput="setZoom(this.value)">
+        </div>
+    </div>
+
+    <script src="js/data/data.js"></script>
+    <script src="js/data/SVGData.js"></script>
+    <script src="js/managers/SVGManager.js"></script>
+    <script src="js/objects/Unit.js"></script>
+    <script>
+        // 에디터용 더미 매니저 (공격 시 에러 방지)
+        class MockCombatManager {
+            showFanEffect() {} 
+            showFloatingText() {}
+            performAttack() {}
+        }
+    </script>
+
+    <script>
+        let game, unit, sceneRef;
+        let selectedSprite = null;
+
+        class EditorScene extends Phaser.Scene {
+            constructor() { super({ key: 'EditorScene' }); }
+
+            preload() {
+                // 더미 매니저 등록
+                this.combatManager = new MockCombatManager();
+            }
+
+            create() {
+                sceneRef = this;
+                this.svgManager = new SVGManager(this);
+                this.activeUnits = []; 
+                this.cameras.main.setBackgroundColor('#222');
+                this.cameras.main.setZoom(2.0);
+
+                this.drawGrid();
+
+                // 1. 모든 텍스처 미리 생성 요청
+                this.svgManager.prebakeAllTextures();
+
+                // 2. ★ [핵심] 텍스처 생성이 완료될 때까지 대기하는 타이머
+                this.loadCheckTimer = this.time.addEvent({
+                    delay: 100, // 0.1초마다 검사
+                    loop: true,
+                    callback: () => {
+                        // SVGManager의 pendingKeys가 0이면(작업 끝) 시작
+                        if (this.svgManager.pendingKeys.size === 0) {
+                            console.log("All Textures Loaded!");
+                            this.loadCheckTimer.remove(); // 타이머 중지
+                            
+                            // 로딩 화면 숨기기
+                            const screen = document.getElementById('loading-screen');
+                            screen.style.opacity = 0;
+                            setTimeout(() => screen.style.display = 'none', 500);
+
+                            // 유닛 소환
+                            this.spawnUnit('weapon_sword', 'acc_shield');
+                        }
+                    }
+                });
+
+                // 드래그 로직 (수정된 좌표계 적용)
+                this.input.on('drag', (pointer, gameObject, dragX, dragY) => {
+                    const targetPoint = new Phaser.Math.Vector2(pointer.worldX, pointer.worldY);
+                    const localPoint = unit.pointToContainer(targetPoint);
+                    
+                    gameObject.x = Math.round(localPoint.x);
+                    gameObject.y = Math.round(localPoint.y);
+if (unit.defaultPose && unit.defaultPose[gameObject.name]) {
+                        unit.defaultPose[gameObject.name].x = gameObject.x;
+                        unit.defaultPose[gameObject.name].y = gameObject.y;
+                    }
+
+                    updateUI(gameObject);
+                });
+                // 클릭 시 선택
+                this.input.on('gameobjectdown', (pointer, gameObject) => {
+                    selectPart(gameObject);
+                });
+            }
+
+            spawnUnit(weapon, acc) {
+                if (unit) unit.destroy();
+                // EditorUnit이라는 이름으로 생성하여 Unit.js 내부 로직 활용
+                const mockStats = { hp: 100, speed: 100, damage: 10, attackSpeed: 1, parts: { body: 'body_knight', weapon: weapon, acc: acc } };
+                
+                unit = new Unit(this, 400, 300, 'EditorUnit', 'ALLY', mockStats);
+                this.add.existing(unit);
+                
+                // 에디터 모드 활성화 (Unit.js가 있다면 참조할 수 있게)
+                unit.isEditorMode = true; 
+
+                // 파츠 인터랙티브 설정
+                if (unit.parts) {
+                    Object.entries(unit.parts).forEach(([name, sprite]) => {
+                        if (sprite) {
+                            sprite.setInteractive({ draggable: true, cursor: 'pointer' });
+                            sprite.name = name;
+                            sprite.dataKey = mockStats.parts[name]; 
+                            
+                            // SVGData 깊이값 적용
+                            if (typeof SVG_DATA !== 'undefined' && SVG_DATA[sprite.dataKey]) {
+                                const data = SVG_DATA[sprite.dataKey];
+                                if (data.depth) sprite.setDepth(data.depth);
+                            }
+                        }
+                    });
+                }
+                unit.removeInteractive(); 
+                // 깊이 정렬
+                unit.sort('depth');
+                resetUI();
+            }
+
+            drawGrid() {
+                const g = this.add.graphics();
+                g.lineStyle(2, 0x00ff00, 0.5); 
+                g.moveTo(400, 0); g.lineTo(400, 600);
+                g.moveTo(0, 300); g.lineTo(800, 300);
+                g.strokePath();
+            }
+        }
+
+        // ================= UI Logic =================
+        
+        function selectPart(sprite) {
+            selectedSprite = sprite;
+            if (unit && unit.parts) Object.values(unit.parts).forEach(p => p.clearTint());
+            sprite.setTint(0x00ffff);
+            document.getElementById('depth-slider').value = sprite.depth;
+            updateUI(sprite);
+        }
+
+        function updateDepth(val) {
+            if (selectedSprite) {
+                selectedSprite.setDepth(parseInt(val));
+                if (unit) unit.sort('depth'); // 즉시 정렬
+                updateUI(selectedSprite);
+            }
+        }
+
+        function updateUI(sprite) {
+            if (!sprite) return;
+            const key = sprite.dataKey || "unknown";
+            
+            document.getElementById('part-name').innerText = `${sprite.name.toUpperCase()} (${key})`;
+            document.querySelector('.info-card').classList.add('active');
+            document.getElementById('depth-val').innerText = sprite.depth;
+
+            let code = `offset: { x: ${Math.round(sprite.x)}, y: ${Math.round(sprite.y)} },`;
+            if (sprite.depth !== 0) code += `\ndepth: ${sprite.depth},`;
+            
+            document.getElementById('code-output').innerText = code;
+        }
+
+        function resetUI() {
+            document.getElementById('part-name').innerText = "파츠를 선택하세요";
+            document.getElementById('code-output').innerText = "(대기중)";
+            document.querySelector('.info-card').classList.remove('active');
+            selectedSprite = null;
+        }
+
+        function copyCode() {
+            const text = document.getElementById('code-output').innerText;
+            if (text.includes("대기중")) return;
+            navigator.clipboard.writeText(text).then(() => {
+                const msg = document.getElementById('status-msg');
+                msg.style.opacity = 1;
+                setTimeout(() => msg.style.opacity = 0, 2000);
+            });
+        }
+
+        // ★ 애니메이션 재생 기능
+        function playAnim(type) {
+            if (!unit) return;
+            console.log("Playing Anim:", type);
+            
+            // Unit.js의 애니메이션 함수 호출
+            switch(type) {
+                case 'SWING': unit.playSwingAnim(); break;
+                case 'HEAVY': unit.playHeavySwingAnim(); break;
+                case 'STAB':  unit.playStabAnim(); break;
+                case 'SHOOT': unit.playShootAnim(); break;
+                case 'CAST':  unit.playCastAnim(); break;
+            }
+        }
+
+        function resetPose() {
+            if (!unit) return;
+            // 모든 트윈 중지 및 아이들링 복귀
+            unit.scene.tweens.killTweensOf(unit.parts.weapon);
+            if(unit.parts.body) unit.scene.tweens.killTweensOf(unit.parts.body);
+            
+            // 위치가 튈 수 있으므로 재소환이 가장 깔끔함
+            // 하지만 편집 중인 위치 유지를 위해 idle만 호출
+            unit.startIdleAnim();
+        }
+
+        function changeLoadout(w, a) { if (sceneRef) sceneRef.spawnUnit(w, a); }
+        function setZoom(val) { if (sceneRef) sceneRef.cameras.main.setZoom(parseFloat(val)); }
+
+        const config = {
+            type: Phaser.AUTO, width: 800, height: 600, parent: 'game-container',
+            scene: EditorScene, backgroundColor: '#222',
+            physics: { default: 'arcade', arcade: { debug: false } }
+        };
+        game = new Phaser.Game(config);
+    </script>
+</body>
+</html>

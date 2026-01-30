@@ -1,4 +1,5 @@
 // js/game.js
+
 const CONFIG = {
     width: 1280,
     height: 720,
@@ -17,7 +18,7 @@ const config = {
     },
     backgroundColor: '#000000',
     
-    // ★ [수정] 물리 엔진(Arcade Physics) 설정 추가
+    // 물리 엔진(Arcade Physics) 설정
     physics: {
         default: 'arcade',
         arcade: {
@@ -26,8 +27,9 @@ const config = {
         }
     },
 
-    // 씬 목록
-    scene: [ TitleScene, CommanderSelectScene, MapScene, BattleScene, ShopScene ]
+    // ★ [핵심 변경] LoadingScene을 배열의 '가장 앞(0번 인덱스)'에 넣어야 합니다.
+    // 순서: 로딩 -> 타이틀 -> 지휘관 선택 -> 맵 -> 전투 -> 상점
+    scene: [ LoadingScene, TitleScene, CommanderSelectScene, MapScene, BattleScene, ShopScene ]
 };
 
 const game = new Phaser.Game(config);
