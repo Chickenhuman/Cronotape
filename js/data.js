@@ -312,12 +312,12 @@ function getEnemyStats(name) {
 }
 // 기존 숫자 키 방식 -> ID 기반 풀(Pool) 방식으로 변경
 const ENEMY_DATA_POOL = {
-    // [Tier 1] 초반 잡몹 구간
+    // [Tier 1] 초반 잡몹 구간 -> ★ 테스트를 위해 화염 법사로 교체!
     'goblin_rookie': { 
-        name: '초보 검투사', 
-        tier: 1, role: 'NORMAL', // 1스테이지 일반 전투용
-        hp: 1500, image: 'base_enemy_1', 
-        deck: ['적군'], aiType: 'BASIC', baseCost: 5 
+        name: '고블린 떼', 
+        tier: 1, role: 'NORMAL',
+        hp: 1200, image: 'base_enemy_1', 
+        deck: ['적군', '적군', '적군'], aiType: 'AGGRESSIVE', baseCost: 8 
     },
     'goblin_horde': { 
         name: '고블린 떼', 

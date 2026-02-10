@@ -4,9 +4,8 @@ class InteractionManager {
     constructor(scene) {
         this.scene = scene;
     }
-
-// ============================================================
-    // 🖱️ 메인 입력 핸들러 (클릭 처리) - [수정됨]
+//// ============================================================
+    // 🖱️ 메인 입력 핸들러 (클릭 처리)
     // ============================================================
     handleMapClick(pointer) {
         if (this.scene.isPlaying) return;
@@ -14,7 +13,7 @@ class InteractionManager {
         const tileX = Math.floor(pointer.x / this.scene.tileSize);
         const tileY = Math.floor(pointer.y / this.scene.tileSize);
 
-        // [에디터 모드]
+        // [1] 에디터 모드
         if (this.scene.isEditorMode) {
             if (this.scene.grid[tileY] && this.scene.grid[tileY][tileX] !== undefined) {
                 let current = this.scene.grid[tileY][tileX];
@@ -24,7 +23,7 @@ class InteractionManager {
             return; 
         }
 
-        // [카드 사용]
+        // [2] 카드 사용
         if (this.scene.cardManager.selectedCardIdx === -1) return;
 
         const cardStr = this.scene.cardManager.hand[this.scene.cardManager.selectedCardIdx];
@@ -34,13 +33,18 @@ class InteractionManager {
 
         const stat = UNIT_STATS[name];
         
-        // 배치 조건 체크
+        // 배치 조건 체크 (맵 밖 클릭 방지)
         if (tileX < 0 || tileX >= this.scene.mapWidth || tileY < 0 || tileY >= this.scene.mapHeight) return;
+        
         const tileVal = this.scene.grid[tileY][tileX];
-        const hasInfiltrate = stat.traits && stat.traits.includes("Infiltrate");
+        
+        // ★ [수정 1] 데이터에 맞춰 한글 '침투'로 변경
+        const hasInfiltrate = stat.traits && stat.traits.includes("침투");
 
         if (tileVal === 1) return this.scene.showFloatingText(pointer.x, pointer.y, "배치 불가 지형!", '#ff0000');
         if (tileVal === 3) return this.scene.showFloatingText(pointer.x, pointer.y, "적 감시 구역!", '#ff0000');
+        
+        // ★ '침투' 특성이 있으면(true) 이 조건문이 무시되어 중립 지역(0)에도 배치됩니다.
         if (tileVal !== 2 && !hasInfiltrate) return this.scene.showFloatingText(pointer.x, pointer.y, "아군 지역 아님", '#ff0000');
 
         // 코스트 체크
@@ -63,10 +67,9 @@ class InteractionManager {
         const marker = this.scene.add.circle(pointer.x, pointer.y, 15, stat.color || 0x00ff00);
         marker.setAlpha(0.5);
         
-        // ★ [핵심 수정] GameLogic의 공용 함수 사용 (하드코딩 제거됨)
         const offsets = GameLogic.getSpawnOffsets(stat.count || 1, 30);
 
-        // 계획 저장
+        // 계획 객체 생성
         const plan = {
             type: type, name: name, x: pointer.x, y: pointer.y,
             time: parseFloat(currentTime), spawned: false,
@@ -74,6 +77,12 @@ class InteractionManager {
             offsets: offsets,
             paidCost: realCost 
         };
+
+        // ★ [수정 2] 마커 클릭 시 배치 취소 (지난번 누락 복구)
+        marker.setInteractive({ cursor: 'pointer' }); 
+        marker.on('pointerdown', () => {
+            this.cancelDeployment(plan);
+        });
         
         this.scene.deployedObjects.push(plan);
         this.scene.updateGhostSimulation();
@@ -86,7 +95,6 @@ class InteractionManager {
         this.scene.fieldGraphics.clear();
         this.scene.fieldGraphics.setVisible(false);
 
-        // 에디터 모드, 플레이 중, 드로우 끄기 요청, 카드 미선택 시 중단
         if (this.scene.isEditorMode || this.scene.isPlaying || !shouldDraw || this.scene.cardManager.selectedCardIdx === -1) {
             return;
         }
@@ -95,9 +103,11 @@ class InteractionManager {
         if (!cardStr) return; 
 
         const [type, name] = cardStr.split('-');
-        if (type !== 'Unit') return; // 스킬은 표시 안 함 (어디든 되니까)
+        if (type !== 'Unit') return; 
 
         const stats = this.scene.getAdjustedStats(type, name);
+        
+        // ★ [수정 3] 여기도 한글 '침투'로 통일
         const hasInfiltrate = stats.traits && stats.traits.includes('침투');
 
         this.scene.fieldGraphics.setVisible(true);
@@ -108,10 +118,11 @@ class InteractionManager {
                 const tileVal = (this.scene.grid[y] && this.scene.grid[y][x] !== undefined) ? this.scene.grid[y][x] : 1;
                 let isDrawable = false;
                 
-                // 침투 유닛 vs 일반 유닛 규칙
                 if (hasInfiltrate) {
+                    // 침투 유닛: 장애물(1), 적 기지(3), 장외(4) 빼고 다 가능 (중립 0 포함)
                     if (tileVal !== 1 && tileVal !== 3 && tileVal !== 4) isDrawable = true;
                 } else {
+                    // 일반 유닛: 오직 아군 영토(2)만 가능
                     if (tileVal === 2) isDrawable = true;
                 }
 

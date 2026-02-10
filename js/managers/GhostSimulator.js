@@ -300,7 +300,7 @@ processPlans(simTime, plans, ghosts, mapContext) {
             }
         });
     }
-
+    
     processDelayedActions(simTime, delayedActions, allGhosts) {
         for (let i = delayedActions.length - 1; i >= 0; i--) {
             const action = delayedActions[i];
@@ -312,7 +312,35 @@ processPlans(simTime, plans, ghosts, mapContext) {
             }
         }
     }
+    // [신규 추가] 시간 업데이트 및 마커 가시성 제어
+    updateTime(time) {
+        this.currentTime = time;
 
+        // 1. 시뮬레이션 실행 (기존 로직 연결)
+        // (run 함수를 호출하거나, 기존에 시뮬레이션을 돌리던 로직을 여기에 연결)
+        // 현재 코드 구조상 simulate()가 적절해 보입니다.
+        if (this.simulate) {
+            this.simulate(); 
+        }
+
+        // 2. ★ [핵심 기능] 배치 마커 가시성 제어
+        if (this.scene && this.scene.deployedObjects) {
+            this.scene.deployedObjects.forEach(plan => {
+                if (!plan.visualMarker) return;
+
+                // 조건: 현재 시간이 소환 시간보다 '이전'일 때만 마커 표시
+                // (1초 < 2초 : 보임 / 5초 >= 2초 : 숨김)
+                const shouldShow = (this.currentTime < plan.time);
+                
+                plan.visualMarker.setVisible(shouldShow);
+
+                // 텍스트나 다른 요소가 있다면 함께 처리
+                if (plan.visualText) {
+                    plan.visualText.setVisible(shouldShow);
+                }
+            });
+        }
+    }
     executeAttack(attacker, allGhosts, target = null, simTime = 0, delayedActions = []) {
         if (!target || !target.active) {
             let minDst = Infinity;
